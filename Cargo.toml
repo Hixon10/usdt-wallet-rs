@@ -1,0 +1,25 @@
+[package]
+name = "usdt-wallet-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+hmac = "0.12.1"
+k256 = "0.13.4"
+pbkdf2 = "0.12.2"
+sha2 = "0.10.9"
+sha3 = "0.10.8"
+
+[lints.clippy]
+# 1. High-value lint groups
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+
+# 2. CLI-Specific Safety & correctness
+unwrap_used = "deny"  # Forces you to handle errors (Result<T>) instead of crashing
+expect_used = "deny"  # Forces meaningful error messages if you must crash
+cast_possible_truncation = "allow" # strict, often annoying in CLIs, safer to allow unless dealing with sensitive math
+
+# 3. Common "noise" suppression from pedantic group
+module_name_repetitions = "allow" # "foo::foo_bar" is fine
+struct_excessive_bools = "allow"  # specific args often need many bool flags

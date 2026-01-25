@@ -1,0 +1,244 @@
+mod main2;
+
+use hmac::{Hmac, Mac};
+use k256::elliptic_curve::PrimeField;
+use k256::elliptic_curve::sec1::ToEncodedPoint;
+use k256::{NonZeroScalar, Scalar, SecretKey};
+use pbkdf2::pbkdf2;
+use sha2::{Digest, Sha256, Sha512};
+use sha3::Keccak256;
+use std::convert::TryInto;
+// Update your k256 imports to include NonZeroScalar
+// Add this to access `from_repr`
+
+// Type alias for HMAC-SHA512
+type HmacSha512 = Hmac<Sha512>;
+
+fn main() {
+    // --- INPUT YOUR 12 WORDS HERE ---
+    let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    let passphrase = ""; // Leave empty unless you specifically set one
+    // --------------------------------
+
+    println!(" recovering TRC20 wallet...");
+
+    // 1. BIP39: Mnemonic -> Seed
+    let seed = mnemonic_to_seed(mnemonic, passphrase);
+    println!("Seed calculated.");
+
+    // 2. BIP32: Master Key Generation
+    let (master_secret, chain_code) = master_key_from_seed(&seed);
+
+    // 3. BIP44: Derive Path m/44'/195'/0'/0/0 (Tron standard)
+    // 44' (Purpose) -> 195' (Tron Coin Type) -> 0' (Account) -> 0 (Change) -> 0 (Index)
+    let path = [
+        2147483692, // 44'  (Hardened: 44 | 0x80000000)
+        2147483843, // 195' (Hardened: 195 | 0x80000000)
+        2147483648, // 0'   (Hardened: 0 | 0x80000000)
+        0,          // 0    (External)
+        0,          // 0    (Address Index)
+    ];
+
+    let mut current_sk = master_secret;
+    let mut current_cc = chain_code;
+
+    for &index in &path {
+        let (next_sk, next_cc) = ckd_priv(&current_sk, &current_cc, index);
+        current_sk = next_sk;
+        current_cc = next_cc;
+    }
+
+    // 4. Output Results
+    let private_key_hex = hex::encode(&*current_sk.to_bytes());
+    let address = private_key_to_tron_address(&current_sk);
+
+    println!("--------------------------------------------------");
+    println!("TRON (TRC20) Wallet Recovered");
+    println!("--------------------------------------------------");
+    println!("Private Key: {}", private_key_hex);
+    println!("Address:     {}", address);
+    println!("--------------------------------------------------");
+    println!("Import this Private Key into TronLink or TrustWallet to access USDT.");
+}
+
+fn private_key_to_tron_address(secret_key: &SecretKey) -> String {
+    // 1. Get the Public Key from the Private Key
+    let public_key = secret_key.public_key();
+
+    // 2. Serialize to UNCOMPRESSED format (65 bytes: 0x04 + X + Y)
+    // Tron/Ethereum use uncompressed keys for address generation.
+    let encoded_point = public_key.to_encoded_point(false);
+    let encoded_bytes = encoded_point.as_bytes();
+
+    // 3. Drop the first byte (0x04) to get the raw 64-byte public key (X + Y)
+    let raw_public_key = &encoded_bytes[1..];
+
+    // 4. Hash the raw public key using Keccak-256
+    let mut hasher = Keccak256::new();
+    hasher.update(raw_public_key);
+    let hash = hasher.finalize();
+
+    // 5. Take the last 20 bytes of the hash (this is the "Pub Key Hash")
+    let last_20_bytes = &hash[12..];
+
+    // 6. Prepend 0x41 (The Tron Version Byte)
+    // 0x41 corresponds to 'T' in base58, ensuring addresses start with T.
+    let mut address_bytes = Vec::with_capacity(21);
+    address_bytes.push(0x41);
+    address_bytes.extend_from_slice(last_20_bytes);
+
+    // 7. Encode using Base58Check
+    base58_check_encode(&address_bytes)
+}
+
+// --- Helper Functions for Encoding ---
+
+// Manual Base58 implementation (No external crate)
+fn encode_base58(input: &[u8]) -> String {
+    let alphabet = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    let mut output = Vec::new();
+
+    // Count leading zeros (Base58 preserves leading zero bytes as '1')
+    let mut zeros = 0;
+    while zeros < input.len() && input[zeros] == 0 {
+        zeros += 1;
+    }
+
+    // Convert byte array to a big integer representation
+    // Estimate size: log(256) / log(58) is approx 1.37
+    let size = (input.len() - zeros) * 138 / 100 + 1;
+    let mut buffer = vec![0u8; size];
+
+    let mut length = 0;
+    for &byte in &input[zeros..] {
+        let mut carry = byte as u32;
+        let mut i = 0;
+
+        // Perform (buffer * 256) + byte
+        // We iterate specifically over the active part of the buffer
+        while i < length || carry != 0 {
+            if i >= buffer.len() {
+                buffer.push(0);
+            }
+            let val = (buffer[i] as u32) * 256 + carry;
+            buffer[i] = (val % 58) as u8;
+            carry = val / 58;
+            i += 1;
+        }
+        length = i;
+    }
+
+    // Add leading '1's for zero bytes
+    for _ in 0..zeros {
+        output.push(alphabet[0] as char);
+    }
+
+    // Add the converted digits (in reverse order)
+    for i in (0..length).rev() {
+        output.push(alphabet[buffer[i] as usize] as char);
+    }
+
+    output.into_iter().collect()
+}
+
+// --- BIP39 Implementation ---
+
+fn mnemonic_to_seed(mnemonic: &str, passphrase: &str) -> [u8; 64] {
+    let salt_prefix = "mnemonic";
+    let salt = format!("{}{}", salt_prefix, passphrase);
+    let mut seed = [0u8; 64];
+
+    // BIP39 uses PBKDF2 with HMAC-SHA512, 2048 rounds
+    pbkdf2::<HmacSha512>(mnemonic.as_bytes(), salt.as_bytes(), 2048, &mut seed)
+        .expect("PBKDF2 failed");
+
+    seed
+}
+
+// --- BIP32 Implementation (HD Wallet) ---
+
+fn master_key_from_seed(seed: &[u8]) -> (SecretKey, [u8; 32]) {
+    let mut mac = HmacSha512::new_from_slice(b"Bitcoin seed").expect("HMAC init failed");
+    mac.update(seed);
+    let result = mac.finalize().into_bytes();
+
+    let (secret_bytes, chain_code) = result.split_at(32);
+
+    let secret_key = SecretKey::from_slice(secret_bytes).expect("Invalid seed for secp256k1");
+    let chain_code_arr: [u8; 32] = chain_code.try_into().expect("Slice length error");
+
+    (secret_key, chain_code_arr)
+}
+
+fn ckd_priv(parent_sk: &SecretKey, parent_cc: &[u8; 32], index: u32) -> (SecretKey, [u8; 32]) {
+    let mut mac = HmacSha512::new_from_slice(parent_cc).expect("HMAC init failed");
+
+    // Handle Hardened vs Normal derivation
+    if index >= 0x80000000 {
+        // Hardened: 0x00 || parent_priv_key || index
+        mac.update(&[0x00]);
+        mac.update(&parent_sk.to_bytes());
+        mac.update(&index.to_be_bytes());
+    } else {
+        // Normal: parent_pub_key_compressed || index
+        let pub_key = parent_sk.public_key();
+        let pub_point = pub_key.to_encoded_point(true); // true = compressed
+        mac.update(pub_point.as_bytes());
+        mac.update(&index.to_be_bytes());
+    }
+
+    let result = mac.finalize().into_bytes();
+    let (tweak_bytes, next_cc) = result.split_at(32);
+
+    // --- FIX STARTS HERE ---
+
+    // 1. Convert the tweak (HMAC output) into a Scalar
+    // from_repr returns a CtOption (Constant Time Option), we simplify with unwrap (conceptually)
+    let tweak_scalar = Option::<Scalar>::from(Scalar::from_repr(*k256::FieldBytes::from_slice(
+        tweak_bytes,
+    )))
+    .expect("Tweak is not a valid scalar");
+
+    // 2. Convert the Parent Secret Key into a NonZeroScalar
+    let parent_scalar = parent_sk.to_nonzero_scalar();
+
+    // 3. Perform the addition: (Parent + Tweak) % CurveOrder
+    // The Add implementation for NonZeroScalar handles the modular arithmetic for us.
+    let child_scalar = *parent_scalar + tweak_scalar;
+
+    // 4. Convert back to SecretKey
+    // It is mathematically possible (but astronomically unlikely) for the result to be zero.
+    let next_sk_scalar = NonZeroScalar::new(child_scalar).expect("Child key is zero (invalid)");
+    let next_sk = SecretKey::from(next_sk_scalar);
+
+    // --- FIX ENDS HERE ---
+
+    let next_cc_arr: [u8; 32] = next_cc.try_into().unwrap();
+
+    (next_sk, next_cc_arr)
+}
+
+// --- TRON Address Logic (Keccak + Base58Check) ---
+
+fn base58_check_encode(payload: &[u8]) -> String {
+    // 1. Calculate the checksum: Double SHA256
+    let hash1 = Sha256::digest(payload);
+    let hash2 = Sha256::digest(hash1);
+
+    // 2. Take the first 4 bytes as the checksum
+    let checksum = &hash2[0..4];
+
+    // 3. Append checksum to the end of the data
+    let mut full_payload = payload.to_vec();
+    full_payload.extend_from_slice(checksum);
+
+    // 4. Convert to Base58 string
+    encode_base58(&full_payload)
+}
+
+// Helper for hex printing
+mod hex {
+    pub fn encode(data: &[u8]) -> String {
+        data.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+}
