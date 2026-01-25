@@ -49,14 +49,14 @@ fn main() {
     }
 
     // 4. Output Results
-    let private_key_hex = hex::encode(&*current_sk.to_bytes());
+    let private_key_hex = hex::encode(&current_sk.to_bytes());
     let address = private_key_to_tron_address(&current_sk);
 
     println!("--------------------------------------------------");
     println!("TRON (TRC20) Wallet Recovered");
     println!("--------------------------------------------------");
-    println!("Private Key: {}", private_key_hex);
-    println!("Address:     {}", address);
+    println!("Private Key: {private_key_hex}");
+    println!("Address:     {address}");
     println!("--------------------------------------------------");
     println!("Import this Private Key into TronLink or TrustWallet to access USDT.");
 }
@@ -111,7 +111,7 @@ fn encode_base58(input: &[u8]) -> String {
 
     let mut length = 0;
     for &byte in &input[zeros..] {
-        let mut carry = byte as u32;
+        let mut carry = u32::from(byte);
         let mut i = 0;
 
         // Perform (buffer * 256) + byte
@@ -120,7 +120,7 @@ fn encode_base58(input: &[u8]) -> String {
             if i >= buffer.len() {
                 buffer.push(0);
             }
-            let val = (buffer[i] as u32) * 256 + carry;
+            let val = u32::from(buffer[i]) * 256 + carry;
             buffer[i] = (val % 58) as u8;
             carry = val / 58;
             i += 1;
@@ -145,7 +145,7 @@ fn encode_base58(input: &[u8]) -> String {
 
 fn mnemonic_to_seed(mnemonic: &str, passphrase: &str) -> [u8; 64] {
     let salt_prefix = "mnemonic";
-    let salt = format!("{}{}", salt_prefix, passphrase);
+    let salt = format!("{salt_prefix}{passphrase}");
     let mut seed = [0u8; 64];
 
     // BIP39 uses PBKDF2 with HMAC-SHA512, 2048 rounds
@@ -239,6 +239,6 @@ fn base58_check_encode(payload: &[u8]) -> String {
 // Helper for hex printing
 mod hex {
     pub fn encode(data: &[u8]) -> String {
-        data.iter().map(|b| format!("{:02x}", b)).collect()
+        data.iter().map(|b| format!("{b:02x}")).collect()
     }
 }
