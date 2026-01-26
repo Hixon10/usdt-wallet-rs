@@ -1,5 +1,3 @@
-mod main2;
-
 use hmac::{Hmac, Mac};
 use k256::elliptic_curve::PrimeField;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
@@ -8,57 +6,18 @@ use pbkdf2::pbkdf2;
 use sha2::{Digest, Sha256, Sha512};
 use sha3::Keccak256;
 use std::convert::TryInto;
-// Update your k256 imports to include NonZeroScalar
-// Add this to access `from_repr`
 
 // Type alias for HMAC-SHA512
 type HmacSha512 = Hmac<Sha512>;
 
 fn main() {
     // --- INPUT YOUR 12 WORDS HERE ---
-    let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    let mnemonic = "hungry into place frozen dice sail essay weird trust great any primary";
     let passphrase = ""; // Leave empty unless you specifically set one
     // --------------------------------
 
-    println!(" recovering TRC20 wallet...");
-
-    // 1. BIP39: Mnemonic -> Seed
-    let seed = mnemonic_to_seed(mnemonic, passphrase);
-    println!("Seed calculated.");
-
-    // 2. BIP32: Master Key Generation
-    let (master_secret, chain_code) = master_key_from_seed(&seed);
-
-    // 3. BIP44: Derive Path m/44'/195'/0'/0/0 (Tron standard)
-    // 44' (Purpose) -> 195' (Tron Coin Type) -> 0' (Account) -> 0 (Change) -> 0 (Index)
-    let path = [
-        2147483692, // 44'  (Hardened: 44 | 0x80000000)
-        2147483843, // 195' (Hardened: 195 | 0x80000000)
-        2147483648, // 0'   (Hardened: 0 | 0x80000000)
-        0,          // 0    (External)
-        0,          // 0    (Address Index)
-    ];
-
-    let mut current_sk = master_secret;
-    let mut current_cc = chain_code;
-
-    for &index in &path {
-        let (next_sk, next_cc) = ckd_priv(&current_sk, &current_cc, index);
-        current_sk = next_sk;
-        current_cc = next_cc;
-    }
-
-    // 4. Output Results
-    let private_key_hex = hex::encode(&current_sk.to_bytes());
-    let address = private_key_to_tron_address(&current_sk);
-
-    println!("--------------------------------------------------");
-    println!("TRON (TRC20) Wallet Recovered");
-    println!("--------------------------------------------------");
-    println!("Private Key: {private_key_hex}");
-    println!("Address:     {address}");
-    println!("--------------------------------------------------");
-    println!("Import this Private Key into TronLink or TrustWallet to access USDT.");
+    mnemonic_to_tron_address_and_private_key(mnemonic, passphrase);
 }
 
 fn private_key_to_tron_address(secret_key: &SecretKey) -> String {
@@ -142,6 +101,64 @@ fn encode_base58(input: &[u8]) -> String {
 }
 
 // --- BIP39 Implementation ---
+
+fn mnemonic_to_tron_address_and_private_key(mnemonic: &str, passphrase: &str) -> (String, SecretKey) {
+    println!(" recovering TRC20 wallet...");
+
+    // 1. BIP39: Mnemonic -> Seed
+    let seed = mnemonic_to_seed(mnemonic, passphrase);
+    println!("Seed calculated.");
+
+    // 2. BIP32: Master Key Generation
+    let (master_secret, chain_code) = master_key_from_seed(&seed);
+
+    // 3. BIP44: Derive Path m/44'/195'/0'/0/0 (Tron standard)
+    // 44' (Purpose) -> 195' (Tron Coin Type) -> 0' (Account) -> 0 (Change) -> 0 (Index)
+    let path = [
+        2147483692, // 44'  (Hardened: 44 | 0x80000000)
+        2147483843, // 195' (Hardened: 195 | 0x80000000)
+        2147483648, // 0'   (Hardened: 0 | 0x80000000)
+        0,          // 0    (External)
+        0,          // 0    (Address Index)
+    ];
+
+    let mut current_sk: SecretKey = master_secret;
+    let mut current_cc = chain_code;
+
+    for &index in &path {
+        let (next_sk, next_cc) = ckd_priv(&current_sk, &current_cc, index);
+        current_sk = next_sk;
+        current_cc = next_cc;
+    }
+
+    // 4. Output Results
+    let private_key_hex = hex::encode(&current_sk.to_bytes());
+    let tron_wallet_address: String = private_key_to_tron_address(&current_sk);
+
+    // Get the Public Key object
+    let public_key = current_sk.public_key();
+    // 2. Get Uncompressed Hex (Standard for Tron/Eth)
+    // 'false' means uncompressed
+    let uncompressed_point = public_key.to_encoded_point(false);
+    let pub_key_hex = hex::encode(uncompressed_point.as_bytes());
+
+    // 3. Prepare Compressed Key (For display/comparison with your expected value)
+    // 'true' asks for the compressed format (33 bytes, starts with 02 or 03)
+    let compressed_point = public_key.to_encoded_point(true);
+    let compressed_public_hex = hex::encode(compressed_point.as_bytes());
+
+    println!("--------------------------------------------------");
+    println!("TRON (TRC20) Wallet Recovered");
+    println!("--------------------------------------------------");
+    println!("Private Key: {private_key_hex}");
+    println!("Public Key: {pub_key_hex}");
+    println!("Public Key (Compressed): {compressed_public_hex}");
+    println!("Tron Address:     {tron_wallet_address}");
+    println!("--------------------------------------------------");
+    println!("Import this Private Key into TronLink or TrustWallet to access USDT.");
+
+    (tron_wallet_address, current_sk)
+}
 
 fn mnemonic_to_seed(mnemonic: &str, passphrase: &str) -> [u8; 64] {
     let salt_prefix = "mnemonic";
@@ -240,5 +257,50 @@ fn base58_check_encode(payload: &[u8]) -> String {
 mod hex {
     pub fn encode(data: &[u8]) -> String {
         data.iter().map(|b| format!("{b:02x}")).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestCase {
+        mnemonic: &'static str,
+        passphrase: &'static str,
+        expected_address: &'static str,
+        expected_private_key_hex: &'static str,
+    }
+
+    #[test]
+    fn mnemonic_to_tron_address_and_private_key_works_for_known_vectors() {
+        let cases = vec![
+            TestCase {
+                mnemonic: "hungry into place frozen dice sail essay weird trust great any primary",
+                passphrase: "",
+                expected_address: "TSQBcxmU7bYYztRBGJiL9PJxc5Pk99dnkc",
+                expected_private_key_hex: "c5669bb6c9cb47a43cff130634cba7c9f6ff93b3608d02a5c8ff14993629bdf2",
+            },
+            // TestCase {
+            //     mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow",
+            //     passphrase: "TREZOR",
+            //     expected_address: "TABC...",
+            //     expected_private_key_hex: "rge",
+            // },
+            // ... up to 100
+        ];
+
+        for (i, case) in cases.iter().enumerate() {
+            let (address, secret_key) = mnemonic_to_tron_address_and_private_key(case.mnemonic, case.passphrase);
+            let private_key_hex = hex::encode(&secret_key.to_bytes());
+
+            assert_eq!(
+                address, case.expected_address,
+                "failed address on case #{i}"
+            );
+            assert_eq!(
+                private_key_hex, case.expected_private_key_hex,
+                "failed private key on case #{i}"
+            );
+        }
     }
 }
