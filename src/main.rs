@@ -298,7 +298,7 @@ mod tests {
             TestCase {
                 mnemonic: "core lecture blood old acoustic blame draft broccoli orange earn text crush",
                 passphrase: "",
-                expected_address: "TEeJmK1dviuFeSjavQn4uPQTaSnEvywqUY",
+                expected_address: "ATEeJmK1dviuFeSjavQn4uPQTaSnEvywqUY",
                 expected_private_key_hex: "f55827cbdbbf48ad11f0d27ca3051f803a182d1d38582f5a8d852d0729b0d463",
             },
             TestCase {
