@@ -102,7 +102,10 @@ fn encode_base58(input: &[u8]) -> String {
 
 // --- BIP39 Implementation ---
 
-fn mnemonic_to_tron_address_and_private_key(mnemonic: &str, passphrase: &str) -> (String, SecretKey) {
+fn mnemonic_to_tron_address_and_private_key(
+    mnemonic: &str,
+    passphrase: &str,
+) -> (String, SecretKey) {
     println!(" recovering TRC20 wallet...");
 
     // 1. BIP39: Mnemonic -> Seed
@@ -280,17 +283,41 @@ mod tests {
                 expected_address: "TSQBcxmU7bYYztRBGJiL9PJxc5Pk99dnkc",
                 expected_private_key_hex: "c5669bb6c9cb47a43cff130634cba7c9f6ff93b3608d02a5c8ff14993629bdf2",
             },
-            // TestCase {
-            //     mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow",
-            //     passphrase: "TREZOR",
-            //     expected_address: "TABC...",
-            //     expected_private_key_hex: "rge",
-            // },
-            // ... up to 100
+            TestCase {
+                mnemonic: "core lecture blood old acoustic blame draft broccoli orange earn text crush",
+                passphrase: "",
+                expected_address: "TEeJmK1sdviuFeSjavQn4uPQTaSnEvywqUY",
+                expected_private_key_hex: "f55827cbdbbf48ad11f0d27ca3051f803a182d1d38582f5a8d852d0729b0d463",
+            },
+            TestCase {
+                mnemonic: "crouch project sunset display just excuse pulp mercy equal employ despair spirit",
+                passphrase: "",
+                expected_address: "TSkjVcUSym3EWa2sJajjc8wLs387pCFCDD",
+                expected_private_key_hex: "d67debb7b7121a9bb81d3643a24ddda50d1bb79aec3baf3f69da11bce9110d39",
+            },
+            TestCase {
+                mnemonic: "bulk elegant gauge gold raw kit smile bamboo fragile twelve put sponsor",
+                passphrase: "",
+                expected_address: "TYt9FKELbGU2woBRnX3sfMSdr8W7BPUGHA",
+                expected_private_key_hex: "e51ba316ac90dc21cfd07ec8b4bf763520df4b6fa8ed1dcb84be17e5ad5387ef",
+            },
+            TestCase {
+                mnemonic: "neglect cup token diagram vanish attack flame taste canyon warrior impulse fence",
+                passphrase: "",
+                expected_address: "TJE8axEkLSZZ2jNHh5bJgfpSJCcsMSk8VK",
+                expected_private_key_hex: "697e24e9ac8e22a09252ae0fa52b9e4463cb2681bec0550bc97eda175aaffc29",
+            },
+            TestCase {
+                mnemonic: "twenty orange brand clerk other review gauge emerge unknown army away grit",
+                passphrase: "",
+                expected_address: "TQNU2oVJDDJWUHQsR4eovuJerqc64wvjZi",
+                expected_private_key_hex: "5a9af1e04cea61cf97a4e7ac57aa0d9347a2d99653b80958119dca185d1782af",
+            },
         ];
 
         for (i, case) in cases.iter().enumerate() {
-            let (address, secret_key) = mnemonic_to_tron_address_and_private_key(case.mnemonic, case.passphrase);
+            let (address, secret_key) =
+                mnemonic_to_tron_address_and_private_key(case.mnemonic, case.passphrase);
             let private_key_hex = hex::encode(&secret_key.to_bytes());
 
             assert_eq!(
