@@ -13,11 +13,13 @@ type HmacSha512 = Hmac<Sha512>;
 fn main() {
     // --- INPUT YOUR 12 WORDS HERE ---
 
-    let mnemonic = "hungry into place frozen dice sail essay weird trust great any primary";
+    let mnemonic =
+        "country position lady inflict alcohol broken off awesome poem shaft badge current";
     let passphrase = ""; // Leave empty unless you specifically set one
+    let address_index = 4;
     // --------------------------------
 
-    mnemonic_to_tron_address_and_private_key(mnemonic, passphrase);
+    mnemonic_to_tron_address_and_private_key(mnemonic, passphrase, address_index);
 }
 
 fn private_key_to_tron_address(secret_key: &SecretKey) -> String {
@@ -105,6 +107,7 @@ fn encode_base58(input: &[u8]) -> String {
 fn mnemonic_to_tron_address_and_private_key(
     mnemonic: &str,
     passphrase: &str,
+    address_index: u32,
 ) -> (String, SecretKey) {
     println!(" recovering TRC20 wallet...");
 
@@ -123,7 +126,7 @@ fn mnemonic_to_tron_address_and_private_key(
         195 | 0x80000000, // 195' (Hardened: 195 | 0x80000000)
         0x80000000,       // 0'   (Hardened: 0 | 0x80000000)
         0,                // 0    (External)
-        0,                // 0    (Address Index)
+        address_index,    // 0    (Address Index)
     ];
 
     let mut current_sk: SecretKey = master_secret;
@@ -282,6 +285,7 @@ mod tests {
     struct TestCase {
         mnemonic: &'static str,
         passphrase: &'static str,
+        address_index: u32,
         expected_address: &'static str,
         expected_private_key_hex: &'static str,
     }
@@ -292,44 +296,81 @@ mod tests {
             TestCase {
                 mnemonic: "hungry into place frozen dice sail essay weird trust great any primary",
                 passphrase: "",
+                address_index: 0,
                 expected_address: "TSQBcxmU7bYYztRBGJiL9PJxc5Pk99dnkc",
                 expected_private_key_hex: "c5669bb6c9cb47a43cff130634cba7c9f6ff93b3608d02a5c8ff14993629bdf2",
             },
             TestCase {
                 mnemonic: "core lecture blood old acoustic blame draft broccoli orange earn text crush",
                 passphrase: "",
+                address_index: 0,
                 expected_address: "TEeJmK1dviuFeSjavQn4uPQTaSnEvywqUY",
                 expected_private_key_hex: "f55827cbdbbf48ad11f0d27ca3051f803a182d1d38582f5a8d852d0729b0d463",
             },
             TestCase {
                 mnemonic: "crouch project sunset display just excuse pulp mercy equal employ despair spirit",
                 passphrase: "",
+                address_index: 0,
                 expected_address: "TSkjVcUSym3EWa2sJajjc8wLs387pCFCDD",
                 expected_private_key_hex: "d67debb7b7121a9bb81d3643a24ddda50d1bb79aec3baf3f69da11bce9110d39",
             },
             TestCase {
                 mnemonic: "bulk elegant gauge gold raw kit smile bamboo fragile twelve put sponsor",
                 passphrase: "",
+                address_index: 0,
                 expected_address: "TYt9FKELbGU2woBRnX3sfMSdr8W7BPUGHA",
                 expected_private_key_hex: "e51ba316ac90dc21cfd07ec8b4bf763520df4b6fa8ed1dcb84be17e5ad5387ef",
             },
             TestCase {
                 mnemonic: "neglect cup token diagram vanish attack flame taste canyon warrior impulse fence",
                 passphrase: "",
+                address_index: 0,
                 expected_address: "TJE8axEkLSZZ2jNHh5bJgfpSJCcsMSk8VK",
                 expected_private_key_hex: "697e24e9ac8e22a09252ae0fa52b9e4463cb2681bec0550bc97eda175aaffc29",
             },
             TestCase {
                 mnemonic: "twenty orange brand clerk other review gauge emerge unknown army away grit",
                 passphrase: "",
+                address_index: 0,
                 expected_address: "TQNU2oVJDDJWUHQsR4eovuJerqc64wvjZi",
                 expected_private_key_hex: "5a9af1e04cea61cf97a4e7ac57aa0d9347a2d99653b80958119dca185d1782af",
+            },
+            TestCase {
+                mnemonic: "country position lady inflict alcohol broken off awesome poem shaft badge current",
+                passphrase: "",
+                address_index: 0,
+                expected_address: "TW2U7X49anPe9X9e9npUQLoyi8DQQJMjat",
+                expected_private_key_hex: "e035bfc7c540e60ac5c2695d153810505f5dee782d48b1860a09815209b40977",
+            },
+            TestCase {
+                mnemonic: "country position lady inflict alcohol broken off awesome poem shaft badge current",
+                passphrase: "",
+                address_index: 4,
+                expected_address: "TPgPUkb8M2NDLfoxwFicgJ95dK8PZYhisG",
+                expected_private_key_hex: "27ea2f56ecca8dd42cbf0cad492c654bcf97bcca60d5711f553985d9ec8fc223",
+            },
+            TestCase {
+                mnemonic: "country position lady inflict alcohol broken off awesome poem shaft badge current",
+                passphrase: "",
+                address_index: 1,
+                expected_address: "TS1ub3AFNQ6jZguPd69LXYfZuu7ByaeZjW",
+                expected_private_key_hex: "8b7cc6d401bb8f529322cf1196b1d201bafc3871db5733f7a45fcc7a8e364679",
+            },
+            TestCase {
+                mnemonic: "merit inform happy chest stem opinion coil surprise alter sibling year rack",
+                passphrase: "",
+                address_index: 13,
+                expected_address: "TBHje3Bo7gWXdnC3CPybKayBgesMzzCv5w",
+                expected_private_key_hex: "d3dd8bd75ef332f6f600de56bfe4ed21111c62f8ff969d5b16b14aad1703d540",
             },
         ];
 
         for (i, case) in cases.iter().enumerate() {
-            let (address, secret_key) =
-                mnemonic_to_tron_address_and_private_key(case.mnemonic, case.passphrase);
+            let (address, secret_key) = mnemonic_to_tron_address_and_private_key(
+                case.mnemonic,
+                case.passphrase,
+                case.address_index,
+            );
             let private_key_hex = hex::encode(&secret_key.to_bytes());
 
             assert_eq!(
