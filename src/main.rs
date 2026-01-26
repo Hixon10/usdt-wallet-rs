@@ -1,8 +1,12 @@
+mod wordlist;
+
 use hmac::{Hmac, Mac};
 use k256::elliptic_curve::PrimeField;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{NonZeroScalar, Scalar, SecretKey};
 use pbkdf2::pbkdf2;
+use rand::RngCore;
+use rand::rngs::OsRng;
 use sha2::{Digest, Sha256, Sha512};
 use sha3::Keccak256;
 use std::convert::TryInto;
@@ -11,6 +15,8 @@ use std::convert::TryInto;
 type HmacSha512 = Hmac<Sha512>;
 
 fn main() {
+    println!("1. Recover wallet/private key from mnemonic");
+    // 1. Recover wallet/private key from mnemonic
     // --- INPUT YOUR 12 WORDS HERE ---
 
     let mnemonic =
@@ -20,7 +26,87 @@ fn main() {
     // --------------------------------
 
     mnemonic_to_tron_address_and_private_key(mnemonic, passphrase, address_index);
+
+    // 2. Generate a NEW Mnemonic (12 words)
+    println!("--------------------------------------------------");
+    println!("--------------------------------------------------");
+    println!("2. Generate a NEW Mnemonic (12 words)");
+    let new_mnemonic = generate_new_mnemonic();
+    println!("Generated Mnemonic: {new_mnemonic}");
+
+    let address_index = 0;
+    mnemonic_to_tron_address_and_private_key(new_mnemonic.as_str(), passphrase, address_index);
 }
+
+// ==========================================================
+// BIP39 GENERATION LOGIC
+// ==========================================================
+
+fn generate_new_mnemonic() -> String {
+    // 1. Generate 128 bits (16 bytes) of Entropy
+    let mut entropy = [0u8; 16];
+    OsRng.fill_bytes(&mut entropy);
+
+    // 2. Calculate Checksum
+    // SHA256(entropy), take first (ENT / 32) bits.
+    // 128 / 32 = 4 bits.
+    let hash = Sha256::digest(entropy);
+    let checksum_byte = hash[0]; // We only need the top 4 bits of this byte
+
+    // 3. Combine Entropy + Checksum
+    // We create a buffer. 16 bytes entropy + 1 byte containing checksum.
+    let mut combined = Vec::with_capacity(17);
+    combined.extend_from_slice(&entropy);
+    combined.push(checksum_byte);
+
+    // 4. Split into 11-bit chunks and map to words
+    // Total bits = 128 + 4 = 132 bits.
+    // 132 / 11 = 12 words.
+    let mut words: Vec<&str> = Vec::new();
+
+    for i in 0..12 {
+        // We need to extract 11 bits starting at bit offset (i * 11)
+        let bit_offset = i * 11;
+        let index = read_11_bits(&combined, bit_offset);
+
+        words.push(wordlist::get_word(index as usize));
+    }
+
+    words.join(" ")
+}
+
+// Helper to read 11 bits from a byte array at an arbitrary bit offset
+fn read_11_bits(data: &[u8], bit_offset: usize) -> u16 {
+    let byte_idx = bit_offset / 8;
+    let bit_rem = bit_offset % 8;
+
+    // We read 3 bytes to ensure we have enough coverage for 11 bits
+    // (though 2 bytes is often enough, 3 covers the edge cases safely)
+    let b0 = u32::from(data[byte_idx]);
+    let b1 = if byte_idx + 1 < data.len() {
+        u32::from(data[byte_idx + 1])
+    } else {
+        0
+    };
+    let b2 = if byte_idx + 2 < data.len() {
+        u32::from(data[byte_idx + 2])
+    } else {
+        0
+    };
+
+    // Combine into a 24-bit window
+    let window = (b0 << 16) | (b1 << 8) | b2;
+
+    // We want the 11 bits starting at `bit_rem` from the MSB of the window.
+    // Window width is 24.
+    // We want to right-shift such that our 11 bits are at the bottom.
+    // Shift = 24 - 11 - bit_rem = 13 - bit_rem
+    let shift = 13 - bit_rem;
+
+    ((window >> shift) & 0x7FF) as u16
+}
+
+// ==========================================================
 
 fn private_key_to_tron_address(secret_key: &SecretKey) -> String {
     // 1. Get the Public Key from the Private Key
@@ -382,5 +468,57 @@ mod tests {
                 "failed private key on case #{i}"
             );
         }
+    }
+
+    #[test]
+    fn generated_mnemonic_has_12_valid_words() {
+        let mnemonic = generate_new_mnemonic();
+
+        let words: Vec<&str> = mnemonic.split_whitespace().collect();
+
+        // Check word count
+        assert_eq!(words.len(), 12, "Mnemonic must have 12 words");
+
+        // Check each word is in WORDS
+        for word in words {
+            assert!(
+                wordlist::WORDS.contains(&word),
+                "Word '{word}' is not in the WORDS list"
+            );
+        }
+
+        // Verify that we can restore private key from it
+        let (address, secret_key) =
+            mnemonic_to_tron_address_and_private_key(mnemonic.as_str(), "", 0);
+        let private_key_hex = hex::encode(&secret_key.to_bytes());
+
+        assert!(!address.is_empty(), "Restored address must not be empty");
+
+        assert!(
+            !private_key_hex.is_empty(),
+            "Restored secret key must not be empty"
+        );
+    }
+
+    #[test]
+    fn generates_two_different_non_empty_mnemonics() {
+        let mnemonic1 = generate_new_mnemonic();
+        let mnemonic2 = generate_new_mnemonic();
+
+        // Not empty
+        assert!(
+            !mnemonic1.trim().is_empty(),
+            "First mnemonic must not be empty"
+        );
+        assert!(
+            !mnemonic2.trim().is_empty(),
+            "Second mnemonic must not be empty"
+        );
+
+        // Not equal
+        assert_ne!(
+            mnemonic1, mnemonic2,
+            "Two generated mnemonics should not be equal"
+        );
     }
 }
