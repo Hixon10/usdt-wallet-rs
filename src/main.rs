@@ -117,12 +117,13 @@ fn mnemonic_to_tron_address_and_private_key(
 
     // 3. BIP44: Derive Path m/44'/195'/0'/0/0 (Tron standard)
     // 44' (Purpose) -> 195' (Tron Coin Type) -> 0' (Account) -> 0 (Change) -> 0 (Index)
+    #[allow(clippy::unreadable_literal)]
     let path = [
-        2147483692, // 44'  (Hardened: 44 | 0x80000000)
-        2147483843, // 195' (Hardened: 195 | 0x80000000)
-        2147483648, // 0'   (Hardened: 0 | 0x80000000)
-        0,          // 0    (External)
-        0,          // 0    (Address Index)
+        44 | 0x80000000,  // 44'  (Hardened: 44 | 0x80000000)
+        195 | 0x80000000, // 195' (Hardened: 195 | 0x80000000)
+        0x80000000,       // 0'   (Hardened: 0 | 0x80000000)
+        0,                // 0    (External)
+        0,                // 0    (Address Index)
     ];
 
     let mut current_sk: SecretKey = master_secret;
@@ -163,6 +164,7 @@ fn mnemonic_to_tron_address_and_private_key(
     (tron_wallet_address, current_sk)
 }
 
+#[allow(clippy::expect_used)]
 fn mnemonic_to_seed(mnemonic: &str, passphrase: &str) -> [u8; 64] {
     let salt_prefix = "mnemonic";
     let salt = format!("{salt_prefix}{passphrase}");
@@ -177,6 +179,7 @@ fn mnemonic_to_seed(mnemonic: &str, passphrase: &str) -> [u8; 64] {
 
 // --- BIP32 Implementation (HD Wallet) ---
 
+#[allow(clippy::expect_used)]
 fn master_key_from_seed(seed: &[u8]) -> (SecretKey, [u8; 32]) {
     let mut mac = HmacSha512::new_from_slice(b"Bitcoin seed").expect("HMAC init failed");
     mac.update(seed);
@@ -190,22 +193,24 @@ fn master_key_from_seed(seed: &[u8]) -> (SecretKey, [u8; 32]) {
     (secret_key, chain_code_arr)
 }
 
+#[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used)]
 fn ckd_priv(parent_sk: &SecretKey, parent_cc: &[u8; 32], index: u32) -> (SecretKey, [u8; 32]) {
     let mut mac = HmacSha512::new_from_slice(parent_cc).expect("HMAC init failed");
 
     // Handle Hardened vs Normal derivation
-    if index >= 0x80000000 {
+    if index >= 0x8000_0000 {
         // Hardened: 0x00 || parent_priv_key || index
         mac.update(&[0x00]);
         mac.update(&parent_sk.to_bytes());
-        mac.update(&index.to_be_bytes());
     } else {
         // Normal: parent_pub_key_compressed || index
         let pub_key = parent_sk.public_key();
         let pub_point = pub_key.to_encoded_point(true); // true = compressed
         mac.update(pub_point.as_bytes());
-        mac.update(&index.to_be_bytes());
     }
+
+    mac.update(&index.to_be_bytes());
 
     let result = mac.finalize().into_bytes();
     let (tweak_bytes, next_cc) = result.split_at(32);
@@ -258,8 +263,15 @@ fn base58_check_encode(payload: &[u8]) -> String {
 
 // Helper for hex printing
 mod hex {
+    use std::fmt::Write;
+
+    #[allow(clippy::unwrap_used)]
     pub fn encode(data: &[u8]) -> String {
-        data.iter().map(|b| format!("{b:02x}")).collect()
+        let mut out = String::with_capacity(data.len() * 2);
+        for b in data {
+            write!(&mut out, "{b:02x}").unwrap();
+        }
+        out
     }
 }
 
@@ -276,7 +288,7 @@ mod tests {
 
     #[test]
     fn mnemonic_to_tron_address_and_private_key_works_for_known_vectors() {
-        let cases = vec![
+        let cases = [
             TestCase {
                 mnemonic: "hungry into place frozen dice sail essay weird trust great any primary",
                 passphrase: "",
