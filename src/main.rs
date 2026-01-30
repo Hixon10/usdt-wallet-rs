@@ -1,5 +1,7 @@
+mod tron_client;
 mod wordlist;
 
+use crate::tron_client::get_trx_balance;
 use hmac::{Hmac, Mac};
 use k256::elliptic_curve::PrimeField;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
@@ -10,6 +12,7 @@ use rand::rngs::OsRng;
 use sha2::{Digest, Sha256, Sha512};
 use sha3::Keccak256;
 use std::convert::TryInto;
+use std::{fs, process};
 
 // Type alias for HMAC-SHA512
 type HmacSha512 = Hmac<Sha512>;
@@ -19,13 +22,20 @@ fn main() {
     // 1. Recover wallet/private key from mnemonic
     // --- INPUT YOUR 12 WORDS HERE ---
 
-    let mnemonic =
-        "country position lady inflict alcohol broken off awesome poem shaft badge current";
+    // let mnemonic =
+    //     "country position lady inflict alcohol broken off awesome poem shaft badge current";
+    let mnemonic = fs::read_to_string("test_mnemonic.txt").unwrap_or_else(|err| {
+        // Print to stderr
+        eprintln!("Cannot read test mnemonic: {err:?}");
+        process::exit(1);
+    });
+
     let passphrase = ""; // Leave empty unless you specifically set one
-    let address_index = 4;
+    let address_index = 0;
     // --------------------------------
 
-    mnemonic_to_tron_address_and_private_key(mnemonic, passphrase, address_index);
+    let (tron_wallet, _) =
+        mnemonic_to_tron_address_and_private_key(mnemonic.as_str(), passphrase, address_index);
 
     // 2. Generate a NEW Mnemonic (12 words)
     println!("--------------------------------------------------");
@@ -36,6 +46,18 @@ fn main() {
 
     let address_index = 0;
     mnemonic_to_tron_address_and_private_key(new_mnemonic.as_str(), passphrase, address_index);
+
+    // get balances
+    let balance = get_trx_balance(tron_wallet.as_str(), None).unwrap_or_else(|err| {
+        // Print to stderr
+        eprintln!("Error fetching balance: {err:?}");
+        // Exit with non-zero status code
+        process::exit(1);
+    });
+
+    #[allow(clippy::cast_precision_loss)]
+    let trx: f64 = balance as f64 / 1_000_000.0;
+    println!("The trx balance is: {trx}");
 }
 
 // ==========================================================
