@@ -1,7 +1,7 @@
 mod tron_client;
 mod wordlist;
 
-use crate::tron_client::get_trx_balance;
+use crate::tron_client::TrongridClient;
 use hmac::{Hmac, Mac};
 use k256::elliptic_curve::PrimeField;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
@@ -12,6 +12,7 @@ use rand::rngs::OsRng;
 use sha2::{Digest, Sha256, Sha512};
 use sha3::Keccak256;
 use std::convert::TryInto;
+use std::time::Duration;
 use std::{fs, process};
 
 // Type alias for HMAC-SHA512
@@ -48,12 +49,22 @@ fn main() {
     mnemonic_to_tron_address_and_private_key(new_mnemonic.as_str(), passphrase, address_index);
 
     // get balances
-    let balance = get_trx_balance(tron_wallet.as_str(), None).unwrap_or_else(|err| {
-        // Print to stderr
-        eprintln!("Error fetching balance: {err:?}");
-        // Exit with non-zero status code
-        process::exit(1);
-    });
+    let client = TrongridClient::new("https://api.trongrid.io", None, Duration::from_secs(5))
+        .unwrap_or_else(|err| {
+            // Print to stderr
+            eprintln!("Error creating TrongridClient: {err:?}");
+            // Exit with non-zero status code
+            process::exit(1);
+        });
+
+    let balance = client
+        .get_trx_balance(tron_wallet.as_str())
+        .unwrap_or_else(|err| {
+            // Print to stderr
+            eprintln!("Error fetching balance: {err:?}");
+            // Exit with non-zero status code
+            process::exit(1);
+        });
 
     #[allow(clippy::cast_precision_loss)]
     let trx: f64 = balance as f64 / 1_000_000.0;
