@@ -31,6 +31,12 @@ fn main() {
         process::exit(1);
     });
 
+    let api_key = fs::read_to_string("test_trongrid_api_key.txt").unwrap_or_else(|err| {
+        // Print to stderr
+        eprintln!("Cannot read trongrid api key: {err:?}");
+        process::exit(1);
+    });
+
     let passphrase = ""; // Leave empty unless you specifically set one
     let address_index = 0;
     // --------------------------------
@@ -49,13 +55,17 @@ fn main() {
     mnemonic_to_tron_address_and_private_key(new_mnemonic.as_str(), passphrase, address_index);
 
     // get balances
-    let client = TrongridClient::new("https://api.trongrid.io", None, Duration::from_secs(5))
-        .unwrap_or_else(|err| {
-            // Print to stderr
-            eprintln!("Error creating TrongridClient: {err:?}");
-            // Exit with non-zero status code
-            process::exit(1);
-        });
+    let client = TrongridClient::new(
+        "https://api.trongrid.io",
+        Some(api_key),
+        Duration::from_secs(5),
+    )
+    .unwrap_or_else(|err| {
+        // Print to stderr
+        eprintln!("Error creating TrongridClient: {err:?}");
+        // Exit with non-zero status code
+        process::exit(1);
+    });
 
     let balance = client
         .get_trx_balance(tron_wallet.as_str())
