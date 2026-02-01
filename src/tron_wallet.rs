@@ -110,57 +110,7 @@ fn private_key_to_tron_address(secret_key: &SecretKey) -> String {
     address_bytes.extend_from_slice(last_20_bytes);
 
     // 7. Encode using Base58Check
-    base58_check_encode(&address_bytes)
-}
-
-// --- Helper Functions for Encoding ---
-
-// Manual Base58 implementation (No external crate)
-fn encode_base58(input: &[u8]) -> String {
-    let alphabet = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-    let mut output = Vec::new();
-
-    // Count leading zeros (Base58 preserves leading zero bytes as '1')
-    let mut zeros = 0;
-    while zeros < input.len() && input[zeros] == 0 {
-        zeros += 1;
-    }
-
-    // Convert byte array to a big integer representation
-    // Estimate size: log(256) / log(58) is approx 1.37
-    let size = (input.len() - zeros) * 138 / 100 + 1;
-    let mut buffer = vec![0u8; size];
-
-    let mut length = 0;
-    for &byte in &input[zeros..] {
-        let mut carry = u32::from(byte);
-        let mut i = 0;
-
-        // Perform (buffer * 256) + byte
-        // We iterate specifically over the active part of the buffer
-        while i < length || carry != 0 {
-            if i >= buffer.len() {
-                buffer.push(0);
-            }
-            let val = u32::from(buffer[i]) * 256 + carry;
-            buffer[i] = (val % 58) as u8;
-            carry = val / 58;
-            i += 1;
-        }
-        length = i;
-    }
-
-    // Add leading '1's for zero bytes
-    for _ in 0..zeros {
-        output.push(alphabet[0] as char);
-    }
-
-    // Add the converted digits (in reverse order)
-    for i in (0..length).rev() {
-        output.push(alphabet[buffer[i] as usize] as char);
-    }
-
-    output.into_iter().collect()
+    bs58::encode(&address_bytes).with_check().into_string()
 }
 
 // --- BIP39 Implementation ---
@@ -200,7 +150,7 @@ pub fn mnemonic_to_tron_address_and_private_key(
     }
 
     // 4. Output Results
-    let private_key_hex = hex::encode(&current_sk.to_bytes());
+    let private_key_hex = hex::encode(current_sk.to_bytes());
     let tron_wallet_address: String = private_key_to_tron_address(&current_sk);
 
     // Get the Public Key object
@@ -307,38 +257,6 @@ fn ckd_priv(parent_sk: &SecretKey, parent_cc: &[u8; 32], index: u32) -> (SecretK
     (next_sk, next_cc_arr)
 }
 
-// --- TRON Address Logic (Keccak + Base58Check) ---
-
-fn base58_check_encode(payload: &[u8]) -> String {
-    // 1. Calculate the checksum: Double SHA256
-    let hash1 = Sha256::digest(payload);
-    let hash2 = Sha256::digest(hash1);
-
-    // 2. Take the first 4 bytes as the checksum
-    let checksum = &hash2[0..4];
-
-    // 3. Append checksum to the end of the data
-    let mut full_payload = payload.to_vec();
-    full_payload.extend_from_slice(checksum);
-
-    // 4. Convert to Base58 string
-    encode_base58(&full_payload)
-}
-
-// Helper for hex printing
-mod hex {
-    use std::fmt::Write;
-
-    #[allow(clippy::unwrap_used)]
-    pub fn encode(data: &[u8]) -> String {
-        let mut out = String::with_capacity(data.len() * 2);
-        for b in data {
-            write!(&mut out, "{b:02x}").unwrap();
-        }
-        out
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -432,7 +350,7 @@ mod tests {
                 case.passphrase,
                 case.address_index,
             );
-            let private_key_hex = hex::encode(&secret_key.to_bytes());
+            let private_key_hex = hex::encode(secret_key.to_bytes());
 
             assert_eq!(
                 address, case.expected_address,
@@ -465,7 +383,7 @@ mod tests {
         // Verify that we can restore private key from it
         let (address, secret_key) =
             mnemonic_to_tron_address_and_private_key(mnemonic.as_str(), "", 0);
-        let private_key_hex = hex::encode(&secret_key.to_bytes());
+        let private_key_hex = hex::encode(secret_key.to_bytes());
 
         assert!(!address.is_empty(), "Restored address must not be empty");
 

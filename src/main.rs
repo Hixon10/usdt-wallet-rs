@@ -66,7 +66,7 @@ fn main() {
         .get_trx_balance(tron_wallet.as_str())
         .unwrap_or_else(|err| {
             // Print to stderr
-            eprintln!("Error fetching balance: {err:?}");
+            eprintln!("Error fetching trx balance: {err:?}");
             // Exit with non-zero status code
             process::exit(1);
         });
@@ -74,4 +74,17 @@ fn main() {
     #[allow(clippy::cast_precision_loss)]
     let trx: f64 = trx_balance as f64 / 1_000_000.0;
     println!("The trx balance is: {trx}");
+
+    let usdt_balance = client
+        .get_usdt_balance(tron_wallet.as_str())
+        .unwrap_or_else(|err| {
+            // Print to stderr
+            eprintln!("Error fetching usdt balance: {err:?}");
+            // Exit with non-zero status code
+            process::exit(1);
+        });
+
+    #[allow(clippy::cast_precision_loss)]
+    let usdt: f64 = usdt_balance as f64 / 1_000_000.0;
+    println!("The usdt_balance balance is: {usdt}");
 }
