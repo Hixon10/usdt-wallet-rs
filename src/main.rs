@@ -87,4 +87,20 @@ fn main() {
     #[allow(clippy::cast_precision_loss)]
     let usdt: f64 = usdt_balance as f64 / 1_000_000.0;
     println!("The usdt_balance balance is: {usdt}");
+
+    // // 3. send RTX
+    // let send_trx_response = client
+    //     .send_trx(
+    //         &wallet_secret_key,
+    //         tron_wallet.as_str(),
+    //         "TEAqZKYBjbEs5eipqHWMP9kGzWrT2v8pdr",
+    //         1000,
+    //     )
+    //     .unwrap_or_else(|err| {
+    //         // Print to stderr
+    //         eprintln!("Error sending trx: {err:?}");
+    //         // Exit with non-zero status code
+    //         process::exit(1);
+    //     });
+    // println!("Send rtx response txid: {send_trx_response}");
 }

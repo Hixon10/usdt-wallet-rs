@@ -1,7 +1,8 @@
-use hmac::digest::Digest;
+use k256::SecretKey;
+use k256::ecdsa::{RecoveryId, Signature, SigningKey};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::fmt;
 use std::time::Duration;
 
@@ -22,6 +23,9 @@ pub enum TronError {
     InvalidHex(String),
     ContractCall(String),
     MissingConstantResult,
+    BroadcastFailed(String),
+    InvalidArgument(String),
+    CreatingSignatureFailed(String),
 }
 
 impl fmt::Display for TronError {
@@ -36,6 +40,9 @@ impl fmt::Display for TronError {
             Self::InvalidHex(msg) => write!(f, "Invalid hex: {msg}"),
             Self::ContractCall(msg) => write!(f, "Contract call error: {msg}"),
             Self::MissingConstantResult => write!(f, "Missing constant_result in response"),
+            Self::BroadcastFailed(msg) => write!(f, "BroadcastTransaction call error: {msg}"),
+            Self::InvalidArgument(msg) => write!(f, "Invalid argument: {msg}"),
+            Self::CreatingSignatureFailed(msg) => write!(f, "Creating Signature Failed: {msg}"),
         }
     }
 }
@@ -71,6 +78,39 @@ struct TriggerConstantContractResponse {
     result: TronRpcResult,
     #[serde(default)]
     constant_result: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateTransactionRequest {
+    pub owner_address: String, // hex (41...)
+    pub to_address: String,    // hex (41...)
+    pub amount: i64,           // in SUN (1 TRX = 1_000_000 SUN)
+    pub visible: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTransactionResponse {
+    pub visible: Option<bool>,
+    pub txid: Option<String>,
+    pub raw_data_hex: String,
+    pub raw_data: serde_json::Value, // not needed for signing; keep flexible
+}
+
+#[derive(Debug, Serialize)]
+pub struct BroadcastTransactionRequest {
+    pub raw_data: serde_json::Value,
+    pub raw_data_hex: String,
+    pub signature: Vec<String>, // hex signature(s)
+    pub txid: Option<String>,
+    pub visible: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct BroadcastTransactionResponse {
+    pub result: bool,
+    pub code: Option<String>,
+    pub message: Option<String>, // often base64-ish; treat as string
+    pub txid: Option<String>,
 }
 
 impl TrongridClient {
@@ -193,6 +233,125 @@ impl TrongridClient {
         Ok(u128::from_be_bytes(low16))
     }
 
+    /// Send native TRX (amount is in SUN: 1 TRX = `1_000_000` SUN)
+    #[allow(dead_code)]
+    pub fn send_trx(
+        &self,
+        wallet_secret_key: &SecretKey,
+        from_base58: &str,
+        to_base58: &str,
+        amount_sun: i64,
+    ) -> Result<String, TronError> {
+        if amount_sun <= 0 {
+            return Err(TronError::InvalidArgument(
+                "amount_sun must be > 0".to_string(),
+            ));
+        }
+
+        // 1) Build unsigned transaction
+        let from_hex41 = Self::tron_base58_to_hex41(from_base58)?;
+        let to_hex41 = Self::tron_base58_to_hex41(to_base58)?;
+
+        let create_body = CreateTransactionRequest {
+            owner_address: hex::encode(&from_hex41),
+            to_address: hex::encode(&to_hex41),
+            amount: amount_sun,
+            visible: false,
+        };
+
+        let create_url = format!("{}/wallet/createtransaction", self.base_url);
+        let mut create_req = self.http_client.post(&create_url).json(&create_body);
+        if let Some(ref key) = self.api_key {
+            create_req = create_req.header("TRON-PRO-API-KEY", key);
+        }
+
+        let create_resp = create_req
+            .send()
+            .map_err(|err| TronError::Network(err.to_string()))?;
+
+        if !create_resp.status().is_success() {
+            return Err(TronError::Http(create_resp.status().as_u16()));
+        }
+
+        let unsigned: CreateTransactionResponse = create_resp.json().map_err(|err| {
+            TronError::Json(format!(
+                "cannot deserialize CreateTransactionResponse: {err}"
+            ))
+        })?;
+
+        let signature = Self::build_tron_signature_from_raw_data_hex(
+            wallet_secret_key,
+            &unsigned.raw_data_hex,
+        )?;
+
+        // 3) Broadcast signed transaction
+        let broadcast_body = BroadcastTransactionRequest {
+            raw_data: unsigned.raw_data,
+            raw_data_hex: unsigned.raw_data_hex,
+            signature: vec![signature],
+            txid: unsigned.txid.clone(),
+            visible: unsigned.visible,
+        };
+
+        let broadcast_url = format!("{}/wallet/broadcasttransaction", self.base_url);
+        let mut broadcast_req = self.http_client.post(&broadcast_url).json(&broadcast_body);
+        if let Some(ref key) = self.api_key {
+            broadcast_req = broadcast_req.header("TRON-PRO-API-KEY", key);
+        }
+
+        let broadcast_resp = broadcast_req
+            .send()
+            .map_err(|err| TronError::Network(err.to_string()))?;
+
+        if !broadcast_resp.status().is_success() {
+            return Err(TronError::Http(broadcast_resp.status().as_u16()));
+        }
+
+        let br: BroadcastTransactionResponse = broadcast_resp.json().map_err(|err| {
+            TronError::Json(format!(
+                "cannot deserialize BroadcastTransactionResponse: {err}"
+            ))
+        })?;
+
+        if !br.result {
+            return Err(TronError::BroadcastFailed(format!(
+                "broadcasttransaction failed: code={:?}, message={:?}",
+                br.code, br.message
+            )));
+        }
+
+        br.txid.clone().ok_or_else(|| {
+            TronError::BroadcastFailed(format!(
+                "broadcasttransaction failed, txid is empty: code={:?}, message={:?}",
+                br.code, br.message
+            ))
+        })
+    }
+
+    fn build_tron_signature_from_raw_data_hex(
+        wallet_secret_key: &SecretKey,
+        raw_data_hex: &str,
+    ) -> Result<String, TronError> {
+        let raw_bytes =
+            hex::decode(raw_data_hex).map_err(|e| TronError::InvalidHex(e.to_string()))?;
+
+        let signing_key = SigningKey::from_bytes(&wallet_secret_key.to_bytes())
+            .map_err(|e| TronError::CreatingSignatureFailed(e.to_string()))?;
+        // 4) sign digest and obtain recovery id (v)
+        // In k256 0.13, use sign_digest_recoverable.
+        let (sig, recid): (Signature, RecoveryId) = signing_key
+            .sign_digest_recoverable(Sha256::new_with_prefix(&raw_bytes))
+            .map_err(|e| TronError::CreatingSignatureFailed(e.to_string()))?;
+        // NOTE: Above line signs the digest of raw_bytes using Sha256::new_with_prefix.
+        // If you prefer to sign the digest you already computed, see the alternative below.
+
+        // 5) serialize signature as 65 bytes: r(32) || s(32) || v(1)
+        let mut out = [0u8; 65];
+        out[..64].copy_from_slice(sig.to_bytes().as_slice());
+        out[64] = recid.to_byte(); // 0 or 1
+        Ok(hex::encode(out))
+    }
+
     fn abi_encode_balance_of(owner20: &[u8]) -> Vec<u8> {
         let mut out = Vec::with_capacity(4 + 32);
         out.extend_from_slice(&[0u8; 12]); // left pad
@@ -238,12 +397,155 @@ mod tests {
     use super::*;
     use httpmock::prelude::*;
 
+    use crate::tron_wallet;
+    use k256::Secp256k1;
+    use k256::elliptic_curve::SecretKey as ECSecretKey;
+
+    #[test]
+    fn build_signature_rejects_invalid_hex() {
+        let sk =
+            secret_key_from_hex("1111111111111111111111111111111111111111111111111111111111111111");
+        let err =
+            TrongridClient::build_tron_signature_from_raw_data_hex(&sk, "zz-not-hex").unwrap_err();
+
+        match err {
+            TronError::InvalidHex(msg) => {
+                assert!(
+                    msg.contains("Invalid character"),
+                    "unexpected network error message: {msg}"
+                );
+            }
+            other => panic!("expected TronError::InvalidHex, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_signature_output_has_expected_format() {
+        let sk =
+            secret_key_from_hex("1111111111111111111111111111111111111111111111111111111111111111");
+
+        // Any valid hex is fine. Keep it small and explicit.
+        let raw_data_hex = "0a0b0c";
+
+        let sig_hex =
+            TrongridClient::build_tron_signature_from_raw_data_hex(&sk, raw_data_hex).unwrap();
+
+        // Must be 65 bytes => 130 hex chars.
+        assert_eq!(sig_hex.len(), 130);
+
+        let sig_bytes = hex::decode(&sig_hex).unwrap();
+        assert_eq!(sig_bytes.len(), 65);
+
+        // v / recovery id must be 0 or 1 according to your code.
+        assert!(sig_bytes[64] == 0 || sig_bytes[64] == 1, "v must be 0 or 1");
+    }
+
+    #[test]
+    fn build_signature_golden_vector_1_contract_test() {
+        const EXPECTED_SIG_HEX: &str = "3c561edf3cc0467052c311f03dbd546a0d9222d75941e3748d7076e07195ebc714f5e337282f97ff07f77b593c1db6383b99913930cae55f28f2aad1c60b4fb700";
+
+        let sk =
+            secret_key_from_hex("1111111111111111111111111111111111111111111111111111111111111111");
+        let raw_data_hex = "0a0b0c";
+
+        let sig_hex =
+            TrongridClient::build_tron_signature_from_raw_data_hex(&sk, raw_data_hex).unwrap();
+        assert_eq!(sig_hex, EXPECTED_SIG_HEX);
+    }
+
+    #[test]
+    fn build_signature_golden_vector_2_contract_test() {
+        const EXPECTED_SIG_HEX: &str = "022a64abe3013591cf8a0a8ea61bf458a831c2fd43fc9b7ea82c043948d0474804c4ca22d3e78ac8b7b0c2055d489334756cbd4244692eaed8d15e6da0a84f2c01";
+
+        let (_, secret_key) = tron_wallet::mnemonic_to_tron_address_and_private_key(
+            "because power elegant ranch excuse plug six wasp sunny radar car topple",
+            "",
+            0,
+        );
+
+        let raw_data_hex = "0a1b2c3d4e5f00112233445566778899aabbccddeeff0123456789abcdef";
+
+        let sig_hex =
+            TrongridClient::build_tron_signature_from_raw_data_hex(&secret_key, raw_data_hex)
+                .unwrap();
+        assert_eq!(sig_hex, EXPECTED_SIG_HEX);
+    }
+
     #[test]
     fn tron_base58_to_hex41_success() {
         let result =
             TrongridClient::tron_base58_to_hex41("TMVQGm1qAQYVdetCeGRRkTWYYrLXuHK2HC").unwrap();
         let result_hex = hex::encode(result);
         assert_eq!("417e5f4552091a69125d5dfcb7b8c2659029395bdf", result_hex);
+    }
+
+    #[test]
+    fn send_trx_success() {
+        let (sender_base58, secret_key) = tron_wallet::mnemonic_to_tron_address_and_private_key(
+            "because power elegant ranch excuse plug six wasp sunny radar car topple",
+            "",
+            0,
+        );
+        let sender_hex41 = TrongridClient::tron_base58_to_hex41(sender_base58.as_str()).unwrap();
+        let receiver_base58 = "TRjE1H8dxypKM1NZRdysbs9wo7huR4bdNz";
+        let receiver_hex41 = TrongridClient::tron_base58_to_hex41(receiver_base58).unwrap();
+
+        let amount = 3134;
+
+        let server = MockServer::start();
+
+        // Mock expects exact JSON body (as a JSON object, not as a raw string)
+        let createtransaction_mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/wallet/createtransaction")
+                .json_body(serde_json::json!({
+                    "owner_address": hex::encode(sender_hex41),
+                    "to_address": hex::encode(receiver_hex41),
+                    "amount": amount,
+                    "visible": false
+                }));
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "visible": false,
+                    "raw_data_hex": "0a1b2c3d4e5f00112233445566778899aabbccddeeff0123456789abcdef",
+                    "raw_data": {}
+                }));
+        });
+
+        let broadcast_transaction_mock = server.mock(|when, then| {
+            when.method(POST)
+                .json_body(serde_json::json!({
+                    "raw_data": {},
+                    "raw_data_hex": "0a1b2c3d4e5f00112233445566778899aabbccddeeff0123456789abcdef",
+                    "signature": [
+                        "022a64abe3013591cf8a0a8ea61bf458a831c2fd43fc9b7ea82c043948d0474804c4ca22d3e78ac8b7b0c2055d489334756cbd4244692eaed8d15e6da0a84f2c01"
+                    ],
+                    "txid": null,
+                    "visible": false
+                }))
+                .path("/wallet/broadcasttransaction");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "result": true,
+                    "txid": "test_txid"
+                }));
+        });
+
+        let client = TrongridClient::new(server.base_url(), None, Duration::from_secs(2)).unwrap();
+
+        let send_trx_result =
+            client.send_trx(&secret_key, sender_base58.as_str(), receiver_base58, amount);
+        assert!(
+            send_trx_result.is_ok(),
+            "send_trx failed: {:?}",
+            send_trx_result.err()
+        );
+        assert_eq!(send_trx_result.unwrap(), "test_txid");
+
+        createtransaction_mock.assert_calls(1);
+        broadcast_transaction_mock.assert_calls(1);
     }
 
     #[test]
@@ -374,5 +676,14 @@ mod tests {
             }
             other => panic!("expected TronError::Network, got: {other:?}"),
         }
+    }
+
+    // Helper: make a SecretKey from 32-byte hex.
+    #[allow(clippy::expect_used)]
+    fn secret_key_from_hex(sk_hex: &str) -> SecretKey {
+        let bytes = hex::decode(sk_hex).expect("valid sk hex");
+        assert_eq!(bytes.len(), 32, "secret key must be 32 bytes");
+        let arr: [u8; 32] = bytes.try_into().unwrap();
+        ECSecretKey::<Secp256k1>::from_bytes(&arr.into()).expect("valid secret key")
     }
 }
