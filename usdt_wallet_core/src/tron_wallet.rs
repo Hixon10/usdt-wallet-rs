@@ -2,7 +2,7 @@
 // BIP39 GENERATION LOGIC
 // ==========================================================
 
-use crate::wordlist;
+use crate::wordlist::get_word;
 use hmac::{Hmac, Mac};
 use k256::elliptic_curve::PrimeField;
 use k256::elliptic_curve::rand_core::OsRng;
@@ -17,6 +17,7 @@ use std::convert::TryInto;
 // Type alias for HMAC-SHA512
 type HmacSha512 = Hmac<Sha512>;
 
+#[must_use]
 pub fn generate_new_mnemonic() -> String {
     // 1. Generate 128 bits (16 bytes) of Entropy
     let mut entropy = [0u8; 16];
@@ -44,7 +45,7 @@ pub fn generate_new_mnemonic() -> String {
         let bit_offset = i * 11;
         let index = read_11_bits(&combined, bit_offset);
 
-        words.push(wordlist::get_word(index as usize));
+        words.push(get_word(index as usize));
     }
 
     words.join(" ")
@@ -115,6 +116,7 @@ fn private_key_to_tron_address(secret_key: &SecretKey) -> String {
 
 // --- BIP39 Implementation ---
 
+#[must_use]
 pub fn mnemonic_to_tron_address_and_private_key(
     mnemonic: &str,
     passphrase: &str,
@@ -260,6 +262,7 @@ fn ckd_priv(parent_sk: &SecretKey, parent_cc: &[u8; 32], index: u32) -> (SecretK
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wordlist::WORDS;
 
     struct TestCase {
         mnemonic: &'static str,
@@ -375,7 +378,7 @@ mod tests {
         // Check each word is in WORDS
         for word in words {
             assert!(
-                wordlist::WORDS.contains(&word),
+                WORDS.contains(&word),
                 "Word '{word}' is not in the WORDS list"
             );
         }

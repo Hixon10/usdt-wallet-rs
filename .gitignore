@@ -10,5 +10,5 @@
 .DS_Store
 Thumbs.db
 
-test_mnemonic.txt
-test_trongrid_api_key.txt
+cli/test_mnemonic.txt
+cli/test_trongrid_api_key.txt

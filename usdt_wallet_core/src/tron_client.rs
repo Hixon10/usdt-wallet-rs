@@ -1,6 +1,6 @@
 use k256::SecretKey;
 use k256::ecdsa::{RecoveryId, Signature, SigningKey};
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
@@ -115,14 +115,16 @@ pub struct BroadcastTransactionResponse {
 
 impl TrongridClient {
     /// Create a client with a reusable internal HTTP client.
+    ///
+    /// # Errors
+    /// If this function encounters any form of error, an error
+    /// variant will be returned.
     pub fn new(
         base_url: impl Into<String>,
         api_key: Option<String>,
         timeout: Duration,
     ) -> Result<Self, TronError> {
-        let http_client = Client::builder()
-            .timeout(timeout)
-            .tls_danger_accept_invalid_certs(false) // enforce trusted CA certs
+        let http_client = Self::build_client(timeout) // enforce trusted CA certs
             .build()
             .map_err(|err| TronError::HttpClient(err.to_string()))?;
 
@@ -133,7 +135,24 @@ impl TrongridClient {
         })
     }
 
-    pub fn get_trx_balance(&self, address: &str) -> Result<u64, TronError> {
+    #[cfg(target_arch = "wasm32")]
+    fn build_client(_: Duration) -> reqwest::ClientBuilder {
+        Client::builder()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn build_client(timeout: Duration) -> reqwest::ClientBuilder {
+        Client::builder()
+            .timeout(timeout)
+            .danger_accept_invalid_certs(false)
+    }
+
+    /// Returns a trx balance for the address.
+    ///
+    /// # Errors
+    /// If this function encounters any form of error, an error
+    /// variant will be returned.
+    pub async fn get_trx_balance(&self, address: &str) -> Result<u64, TronError> {
         let url = format!("{}/v1/accounts/{}", self.base_url, address);
 
         let mut request = self.http_client.get(&url);
@@ -146,6 +165,7 @@ impl TrongridClient {
         // 1. network
         let response = request
             .send()
+            .await
             .map_err(|err| TronError::Network(err.to_string()))?;
 
         // 2. http code
@@ -156,6 +176,7 @@ impl TrongridClient {
         // 3. parse as struct (no manual JSON traversal!)
         let parsed: AccountResponse = response
             .json()
+            .await
             .map_err(|err| TronError::Json(err.to_string()))?;
 
         // 4. data must contain at least 1 entry
@@ -166,7 +187,11 @@ impl TrongridClient {
 
     /// On-chain USDT balance via `balanceOf(address)` (TRC20).
     /// Returns base units (USDT decimals=6) as u128.
-    pub fn get_usdt_balance(&self, owner_base58: &str) -> Result<u128, TronError> {
+    ///
+    /// # Errors
+    /// If this function encounters any form of error, an error
+    /// variant will be returned.
+    pub async fn get_usdt_balance(&self, owner_base58: &str) -> Result<u128, TronError> {
         const USDT_CONTRACT_BASE58: &str = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
         let owner_hex41 = Self::tron_base58_to_hex41(owner_base58)?;
@@ -194,6 +219,7 @@ impl TrongridClient {
 
         let response = request
             .send()
+            .await
             .map_err(|err| TronError::Network(err.to_string()))?;
 
         if !response.status().is_success() {
@@ -202,6 +228,7 @@ impl TrongridClient {
 
         let parsed: TriggerConstantContractResponse = response
             .json()
+            .await
             .map_err(|err| TronError::Json(err.to_string()))?;
 
         if !parsed.result.result {
@@ -234,8 +261,12 @@ impl TrongridClient {
     }
 
     /// Send native TRX (amount is in SUN: 1 TRX = `1_000_000` SUN)
+    ///
+    /// # Errors
+    /// If this function encounters any form of error, an error
+    /// variant will be returned.
     #[allow(dead_code)]
-    pub fn send_trx(
+    pub async fn send_trx(
         &self,
         wallet_secret_key: &SecretKey,
         from_base58: &str,
@@ -267,13 +298,14 @@ impl TrongridClient {
 
         let create_resp = create_req
             .send()
+            .await
             .map_err(|err| TronError::Network(err.to_string()))?;
 
         if !create_resp.status().is_success() {
             return Err(TronError::Http(create_resp.status().as_u16()));
         }
 
-        let unsigned: CreateTransactionResponse = create_resp.json().map_err(|err| {
+        let unsigned: CreateTransactionResponse = create_resp.json().await.map_err(|err| {
             TronError::Json(format!(
                 "cannot deserialize CreateTransactionResponse: {err}"
             ))
@@ -301,13 +333,14 @@ impl TrongridClient {
 
         let broadcast_resp = broadcast_req
             .send()
+            .await
             .map_err(|err| TronError::Network(err.to_string()))?;
 
         if !broadcast_resp.status().is_success() {
             return Err(TronError::Http(broadcast_resp.status().as_u16()));
         }
 
-        let br: BroadcastTransactionResponse = broadcast_resp.json().map_err(|err| {
+        let br: BroadcastTransactionResponse = broadcast_resp.json().await.map_err(|err| {
             TronError::Json(format!(
                 "cannot deserialize BroadcastTransactionResponse: {err}"
             ))
@@ -479,8 +512,8 @@ mod tests {
         assert_eq!("417e5f4552091a69125d5dfcb7b8c2659029395bdf", result_hex);
     }
 
-    #[test]
-    fn send_trx_success() {
+    #[tokio::test]
+    async fn send_trx_success() {
         let (sender_base58, secret_key) = tron_wallet::mnemonic_to_tron_address_and_private_key(
             "because power elegant ranch excuse plug six wasp sunny radar car topple",
             "",
@@ -535,8 +568,9 @@ mod tests {
 
         let client = TrongridClient::new(server.base_url(), None, Duration::from_secs(2)).unwrap();
 
-        let send_trx_result =
-            client.send_trx(&secret_key, sender_base58.as_str(), receiver_base58, amount);
+        let send_trx_result = client
+            .send_trx(&secret_key, sender_base58.as_str(), receiver_base58, amount)
+            .await;
         assert!(
             send_trx_result.is_ok(),
             "send_trx failed: {:?}",
@@ -548,8 +582,8 @@ mod tests {
         broadcast_transaction_mock.assert_calls(1);
     }
 
-    #[test]
-    fn get_usdt_balance_success() {
+    #[tokio::test]
+    async fn get_usdt_balance_success() {
         // Known mainnet Tron address (USDT contract itself).
         // It is a valid base58check address and decodes cleanly.
         let owner_base58 = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
@@ -594,15 +628,15 @@ mod tests {
 
         let client = TrongridClient::new(server.base_url(), None, Duration::from_secs(2)).unwrap();
 
-        let bal = client.get_usdt_balance(owner_base58).unwrap();
+        let bal = client.get_usdt_balance(owner_base58).await.unwrap();
         assert_eq!(bal, 1_500_000u128);
 
         // Extra: ensure the mock was hit exactly once
         m.assert_calls(1);
     }
 
-    #[test]
-    fn get_balance_success() {
+    #[tokio::test]
+    async fn get_balance_success() {
         let server = MockServer::start();
 
         let _m = server.mock(|when, then| {
@@ -613,12 +647,12 @@ mod tests {
         });
 
         let client = TrongridClient::new(server.base_url(), None, Duration::from_secs(2)).unwrap();
-        let bal = client.get_trx_balance("T123").unwrap();
+        let bal = client.get_trx_balance("T123").await.unwrap();
         assert_eq!(bal, 322_342);
     }
 
-    #[test]
-    fn get_balance_timeout() {
+    #[tokio::test]
+    async fn get_balance_timeout() {
         let server = MockServer::start();
 
         let _m = server.mock(|when, then| {
@@ -631,7 +665,7 @@ mod tests {
 
         let client =
             TrongridClient::new(server.base_url(), None, Duration::from_millis(50)).unwrap();
-        let err = client.get_trx_balance("T123").unwrap_err();
+        let err = client.get_trx_balance("T123").await.unwrap_err();
 
         match err {
             TronError::Network(msg) => {
@@ -649,8 +683,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn get_balance_invalid_json_response() {
+    #[tokio::test]
+    async fn get_balance_invalid_json_response() {
         let server = MockServer::start();
 
         let _m = server.mock(|when, then| {
@@ -662,7 +696,7 @@ mod tests {
         });
 
         let client = TrongridClient::new(server.base_url(), None, Duration::from_secs(2)).unwrap();
-        let err = client.get_trx_balance("T123").unwrap_err();
+        let err = client.get_trx_balance("T123").await.unwrap_err();
 
         // This error originates from JSON parsing (serde_json via reqwest::Response::json()).
         // The exact message can vary by versions, so keep the assertion slightly flexible.

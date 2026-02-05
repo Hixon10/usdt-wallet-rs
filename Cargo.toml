@@ -1,25 +1,8 @@
-[package]
-name = "usdt-wallet-rs"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = ["usdt_wallet_core", "cli", "frontend"]
+resolver = "2"
 
-[dependencies]
-hmac = "0.12.1"
-k256 = { version = "0.13.4", features = ["ecdsa"] }
-pbkdf2 = "0.12.2"
-sha2 = "0.10.9"
-sha3 = "0.10.8"
-rand = "0.8.5"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-reqwest = { version = "0.13.1", features = ["blocking", "json"] }
-hex = "0.4.3"
-bs58 = { version = "0.5.1", features = ["check"] }
-
-[dev-dependencies]
-httpmock = "0.8.2"
-
-[lints.clippy]
+[workspace.lints.clippy]
 # 1. High-value lint groups
 pedantic = { level = "deny", priority = -1 }
 nursery = { level = "deny", priority = -1 }

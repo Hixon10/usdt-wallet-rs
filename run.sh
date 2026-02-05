@@ -4,4 +4,4 @@ set -e
 
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
-cargo run
+cargo run -p cli

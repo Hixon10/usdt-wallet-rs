@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Rust WASM Demo</title>
+</head>
+<body>
+<h1>WASM Client</h1>
+
+<div style="margin-bottom: 10px;">
+    <label for="wallet-input">Wallet: </label>
+    <input type="text" id="wallet-input" value="browser_user_1">
+    <button id="send-btn">Send Request</button>
+</div>
+
+<div id="content" style="border: 1px solid #ccc; padding: 10px;">
+    Result will appear here...
+</div>
+
+<script type="module">
+    import init, { fetch_html } from './pkg/frontend.js';
+
+    async function run() {
+        await init();
+
+        const btn = document.getElementById('send-btn');
+        const input = document.getElementById('wallet-input');
+        const contentDiv = document.getElementById('content');
+
+        btn.addEventListener('click', async () => {
+            contentDiv.innerText = "Loading...";
+            const wallet = input.value; // Get value from input
+
+            try {
+                // Pass the userId string to Rust
+                const htmlContent = await fetch_html(wallet);
+                contentDiv.innerHTML = htmlContent;
+            } catch (error) {
+                contentDiv.innerText = error;
+                contentDiv.style.color = 'red';
+            }
+        });
+    }
+
+    run();
+</script>
+</body>
+</html>

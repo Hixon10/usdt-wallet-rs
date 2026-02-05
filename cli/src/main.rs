@@ -1,39 +1,38 @@
-mod tron_client;
-mod tron_wallet;
-mod wordlist;
-
-use crate::tron_client::TrongridClient;
+use std::path::PathBuf;
 use std::time::Duration;
 use std::{fs, process};
+use usdt_wallet_core::tron_client::TrongridClient;
+use usdt_wallet_core::tron_wallet;
+use usdt_wallet_core::tron_wallet::mnemonic_to_tron_address_and_private_key;
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     println!("1. Recover wallet/private key from mnemonic");
     // 1. Recover wallet/private key from mnemonic
     // --- INPUT YOUR 12 WORDS HERE ---
 
     // let mnemonic =
     //     "country position lady inflict alcohol broken off awesome poem shaft badge current";
-    let mnemonic = fs::read_to_string("test_mnemonic.txt").unwrap_or_else(|err| {
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mnemonic = fs::read_to_string(base.join("test_mnemonic.txt")).unwrap_or_else(|err| {
         // Print to stderr
         eprintln!("Cannot read test mnemonic: {err:?}");
         process::exit(1);
     });
 
-    let trongrid_api_key = fs::read_to_string("test_trongrid_api_key.txt").unwrap_or_else(|err| {
-        // Print to stderr
-        eprintln!("Cannot read trongrid api key: {err:?}");
-        process::exit(1);
-    });
+    let trongrid_api_key = fs::read_to_string(base.join("test_trongrid_api_key.txt"))
+        .unwrap_or_else(|err| {
+            // Print to stderr
+            eprintln!("Cannot read trongrid api key: {err:?}");
+            process::exit(1);
+        });
 
     let passphrase = ""; // Leave empty unless you specifically set one
     let address_index = 0;
     // --------------------------------
 
-    let (tron_wallet, _) = tron_wallet::mnemonic_to_tron_address_and_private_key(
-        mnemonic.as_str(),
-        passphrase,
-        address_index,
-    );
+    let (tron_wallet, _) =
+        mnemonic_to_tron_address_and_private_key(mnemonic.as_str(), passphrase, address_index);
 
     // 2. Generate a NEW Mnemonic (12 words)
     println!("--------------------------------------------------");
@@ -43,11 +42,8 @@ fn main() {
     println!("Generated Mnemonic: {new_mnemonic}");
 
     let address_index = 0;
-    tron_wallet::mnemonic_to_tron_address_and_private_key(
-        new_mnemonic.as_str(),
-        passphrase,
-        address_index,
-    );
+    let _ =
+        mnemonic_to_tron_address_and_private_key(new_mnemonic.as_str(), passphrase, address_index);
 
     // get balances
     let client = TrongridClient::new(
@@ -64,6 +60,7 @@ fn main() {
 
     let trx_balance = client
         .get_trx_balance(tron_wallet.as_str())
+        .await
         .unwrap_or_else(|err| {
             // Print to stderr
             eprintln!("Error fetching trx balance: {err:?}");
@@ -77,6 +74,7 @@ fn main() {
 
     let usdt_balance = client
         .get_usdt_balance(tron_wallet.as_str())
+        .await
         .unwrap_or_else(|err| {
             // Print to stderr
             eprintln!("Error fetching usdt balance: {err:?}");

@@ -26,13 +26,25 @@ jobs:
         uses: actions-rust-lang/rustfmt@v1
 
       - name: Run clippy (warnings as errors)
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --workspace --verbose
 
       - name: Build (debug)
-        run: cargo build --verbose
+        run: cargo build --workspace --verbose
 
       - name: Build (release)
-        run: cargo build --release
+        run: cargo build --workspace --release
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build frontend WASM
+        run: cargo build -p frontend --target wasm32-unknown-unknown --release
+
+      - name: wasm-pack build
+        run: |
+          cd frontend
+          cargo install wasm-pack
+          wasm-pack build --target web
