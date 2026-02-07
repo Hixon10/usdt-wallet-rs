@@ -18,7 +18,7 @@
 </div>
 
 <script type="module">
-    import init, { fetch_html } from './pkg/frontend.js';
+    import init, { get_trx_balance } from './pkg/frontend.js';
 
     async function run() {
         await init();
@@ -33,7 +33,7 @@
 
             try {
                 // Pass the userId string to Rust
-                const htmlContent = await fetch_html(wallet);
+                const htmlContent = await get_trx_balance(wallet, "");
                 contentDiv.innerHTML = htmlContent;
             } catch (error) {
                 contentDiv.innerText = error;
