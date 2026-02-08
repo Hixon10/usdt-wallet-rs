@@ -53,3 +53,4 @@ jobs:
           mkdir -p docs
           cp frontend/index.html docs/
           cp -r frontend/pkg docs/pkg
+          touch docs/.nojekyll
