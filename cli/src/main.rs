@@ -103,6 +103,7 @@ async fn main() {
     //         "TEAqZKYBjbEs5eipqHWMP9kGzWrT2v8pdr",
     //         1000,
     //     )
+    //     .await
     //     .unwrap_or_else(|err| {
     //         // Print to stderr
     //         eprintln!("Error sending trx: {err:?}");
@@ -110,4 +111,21 @@ async fn main() {
     //         process::exit(1);
     //     });
     // println!("Send rtx response txid: {send_trx_response}");
+    //
+    // // 4. send USDT
+    // let send_usdt_response = client
+    //     .send_usdt(
+    //         &wallet_secret_key,
+    //         tron_wallet.as_str(),
+    //         "TEAqZKYBjbEs5eipqHWMP9kGzWrT2v8pdr",
+    //         1001,
+    //     )
+    //     .await
+    //     .unwrap_or_else(|err| {
+    //         // Print to stderr
+    //         eprintln!("Error sending usdt: {err:?}");
+    //         // Exit with non-zero status code
+    //         process::exit(1);
+    //     });
+    // println!("Send usdt response txid: {send_usdt_response}");
 }

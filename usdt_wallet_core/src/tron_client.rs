@@ -113,6 +113,30 @@ pub struct BroadcastTransactionResponse {
     pub txid: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct TriggerSmartContractRequest {
+    pub owner_address: String,     // hex, no 0x
+    pub contract_address: String,  // hex, no 0x
+    pub function_selector: String, // e.g. "transfer(address,uint256)"
+    pub parameter: String,         // hex ABI-encoded params (no 0x)
+    pub fee_limit: i64,            // in SUN (TRX * 1e6)
+    pub call_value: i64,           // 0 for TRC20 transfer
+    pub visible: bool,             // we use false because we send hex addresses
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TriggerSmartContractResponse {
+    pub transaction: Option<CreateTransactionResponse>,
+    // there can be other fields like `result`, but transaction is what we need
+    pub result: TriggerResult,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TriggerResult {
+    /// "It is true if the estimate is successful, otherwise false"
+    pub result: bool,
+}
+
 impl TrongridClient {
     /// Create a client with a reusable internal HTTP client.
     ///
@@ -361,6 +385,133 @@ impl TrongridClient {
         })
     }
 
+    /// Send TRC20 USDT on Tron.
+    /// `amount_base_units` is in USDT base units (decimals=6).
+    ///
+    /// Returns txid on success.
+    pub async fn send_usdt(
+        &self,
+        wallet_secret_key: &SecretKey,
+        from_base58: &str,
+        to_base58: &str,
+        amount_base_units: u128,
+    ) -> Result<String, TronError> {
+        const USDT_CONTRACT_BASE58: &str = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+
+        if amount_base_units == 0 {
+            return Err(TronError::InvalidArgument(
+                "amount_base_units must be > 0".to_string(),
+            ));
+        }
+
+        // 1) Addresses
+        let from_hex41 = Self::tron_base58_to_hex41(from_base58)?;
+        let to_hex41 = Self::tron_base58_to_hex41(to_base58)?;
+        let contract_hex41 = Self::tron_base58_to_hex41(USDT_CONTRACT_BASE58)?;
+
+        // ABI expects 20-byte EVM address (drop 0x41 prefix)
+        let to_evm20 = &to_hex41[1..];
+
+        let parameter = Self::abi_encode_transfer(to_evm20, amount_base_units);
+        if parameter.is_empty() {
+            return Err(TronError::InvalidArgument(
+                "invalid to address for ABI encoding".to_string(),
+            ));
+        }
+
+        // 2) Build unsigned contract tx
+        // fee_limit: how much TRX you're willing to burn for energy/bw (in SUN).
+        // For USDT transfer, 20-40 TRX is commonly safe depending on account resources.
+        let body = TriggerSmartContractRequest {
+            owner_address: hex::encode(&from_hex41),
+            contract_address: hex::encode(&contract_hex41),
+            function_selector: "transfer(address,uint256)".to_string(),
+            parameter: hex::encode(parameter),
+            fee_limit: 30_000_000, // 30 TRX in SUN; tune as you like
+            call_value: 0,
+            visible: false,
+        };
+
+        let url = format!("{}/wallet/triggersmartcontract", self.base_url);
+        let mut req = self.http_client.post(&url).json(&body);
+        if let Some(ref key) = self.api_key {
+            req = req.header("TRON-PRO-API-KEY", key);
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|err| TronError::Network(err.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(TronError::Http(resp.status().as_u16()));
+        }
+
+        let parsed: TriggerSmartContractResponse = resp
+            .json()
+            .await
+            .map_err(|err| TronError::Json(err.to_string()))?;
+
+        if !parsed.result.result {
+            return Err(TronError::ContractCall(
+                "triggersmartcontract failed".to_string(),
+            ));
+        }
+
+        let unsigned = parsed.transaction.ok_or_else(|| {
+            TronError::ContractCall("missing transaction in response".to_string())
+        })?;
+
+        // 3) Sign raw_data_hex
+        let signature = Self::build_tron_signature_from_raw_data_hex(
+            wallet_secret_key,
+            &unsigned.raw_data_hex,
+        )?;
+
+        // 4) Broadcast signed transaction
+        let broadcast_body = BroadcastTransactionRequest {
+            raw_data: unsigned.raw_data,
+            raw_data_hex: unsigned.raw_data_hex,
+            signature: vec![signature],
+            txid: unsigned.txid.clone(),
+            visible: unsigned.visible,
+        };
+
+        let broadcast_url = format!("{}/wallet/broadcasttransaction", self.base_url);
+        let mut broadcast_req = self.http_client.post(&broadcast_url).json(&broadcast_body);
+        if let Some(ref key) = self.api_key {
+            broadcast_req = broadcast_req.header("TRON-PRO-API-KEY", key);
+        }
+
+        let broadcast_resp = broadcast_req
+            .send()
+            .await
+            .map_err(|err| TronError::Network(err.to_string()))?;
+
+        if !broadcast_resp.status().is_success() {
+            return Err(TronError::Http(broadcast_resp.status().as_u16()));
+        }
+
+        let br: BroadcastTransactionResponse = broadcast_resp
+            .json()
+            .await
+            .map_err(|err| TronError::Json(err.to_string()))?;
+
+        if !br.result {
+            return Err(TronError::BroadcastFailed(format!(
+                "broadcasttransaction failed: code={:?}, message={:?}",
+                br.code, br.message
+            )));
+        }
+
+        br.txid.clone().ok_or_else(|| {
+            TronError::BroadcastFailed(format!(
+                "broadcasttransaction failed, txid is empty: code={:?}, message={:?}",
+                br.code, br.message
+            ))
+        })
+    }
+
     fn build_tron_signature_from_raw_data_hex(
         wallet_secret_key: &SecretKey,
         raw_data_hex: &str,
@@ -389,6 +540,31 @@ impl TrongridClient {
         let mut out = Vec::with_capacity(4 + 32);
         out.extend_from_slice(&[0u8; 12]); // left pad
         out.extend_from_slice(owner20);
+        out
+    }
+
+    fn abi_encode_transfer(to20: &[u8], amount_u256: u128) -> Vec<u8> {
+        // ABI for transfer(address,uint256):
+        // args only (TronGrid "parameter" does NOT include the 4-byte function selector)
+        // address (20 bytes) left-padded to 32
+        // uint256 (32 bytes) big-endian
+        if to20.len() != 20 {
+            // keep it simple; caller guarantees 20 bytes
+            return vec![];
+        }
+
+        let mut out = Vec::with_capacity(64);
+
+        // address
+        out.extend_from_slice(&[0u8; 12]);
+        out.extend_from_slice(to20);
+
+        // uint256
+        let mut amount32 = [0u8; 32];
+        // we only support up to u128 here; write into the low 16 bytes
+        amount32[16..32].copy_from_slice(&amount_u256.to_be_bytes());
+        out.extend_from_slice(&amount32);
+
         out
     }
 
@@ -581,6 +757,96 @@ mod tests {
         assert_eq!(send_trx_result.unwrap(), "test_txid");
 
         createtransaction_mock.assert_calls(1);
+        broadcast_transaction_mock.assert_calls(1);
+    }
+
+    #[tokio::test]
+    async fn send_usdt_success() {
+        let (sender_base58, secret_key) = tron_wallet::mnemonic_to_tron_address_and_private_key(
+            "because power elegant access excuse plug six wasp sunny radar car topple",
+            "",
+            0,
+            0,
+        );
+        let sender_hex41 = TrongridClient::tron_base58_to_hex41(sender_base58.as_str()).unwrap();
+        let (receiver_base58, _) = tron_wallet::mnemonic_to_tron_address_and_private_key(
+            "exclude buyer thrive rookie narrow random metal ring sea cable diamond raw",
+            "",
+            1,
+            0,
+        );
+
+        let amount = 9824;
+
+        let expected_parameter = "000000000000000000000000a3217cce252900a3419f5966796295d298b87b080000000000000000000000000000000000000000000000000000000000002660";
+
+        let server = MockServer::start();
+
+        // Mock expects exact JSON body (as a JSON object, not as a raw string)
+        let triggersmartcontract_mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/wallet/triggersmartcontract")
+                .json_body(serde_json::json!({
+                    "owner_address": hex::encode(sender_hex41),
+                    "contract_address": "41a614f803b6fd780986a42c78ec9c7f77e6ded13c",
+                    "function_selector": "transfer(address,uint256)",
+                    "parameter": expected_parameter,
+                    "fee_limit": 30000000,
+                    "call_value": 0,
+                    "visible": false
+                }));
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "result": {
+                        "result": true
+                    },
+                    "transaction": {
+                        "visible": false,
+                        "raw_data_hex": "0a1b2c3d4e5f00112233445566778899aabbccddeeff0123456789abcdef",
+                        "raw_data": {}
+                    }
+                }));
+        });
+
+        let broadcast_transaction_mock = server.mock(|when, then| {
+            when.method(POST)
+                .json_body(serde_json::json!({
+                    "raw_data": {},
+                    "raw_data_hex": "0a1b2c3d4e5f00112233445566778899aabbccddeeff0123456789abcdef",
+                    "signature": [
+                        "2a860e4d6f226def86627cbcd2bdb39f03d4db02199ed9e1074c6eb9b17b007c645e36dfeee3c532d2fef04051478c8db32ff548e3f93e190d832f3da5ca1de700"
+                    ],
+                    "txid": null,
+                    "visible": false
+                }))
+                .path("/wallet/broadcasttransaction");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "result": true,
+                    "txid": "test_txid"
+                }));
+        });
+
+        let client = TrongridClient::new(server.base_url(), None, Duration::from_secs(2)).unwrap();
+
+        let send_trx_result = client
+            .send_usdt(
+                &secret_key,
+                sender_base58.as_str(),
+                receiver_base58.as_str(),
+                amount,
+            )
+            .await;
+        assert!(
+            send_trx_result.is_ok(),
+            "send_trx failed: {:?}",
+            send_trx_result.err()
+        );
+        assert_eq!(send_trx_result.unwrap(), "test_txid");
+
+        triggersmartcontract_mock.assert_calls(1);
         broadcast_transaction_mock.assert_calls(1);
     }
 
