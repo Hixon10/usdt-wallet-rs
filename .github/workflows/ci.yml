@@ -46,3 +46,10 @@ jobs:
           cd frontend
           cargo install wasm-pack
           wasm-pack build --target web
+
+      - name: Prepare docs folder for GitHub Pages
+        run: |
+          rm -rf docs
+          mkdir -p docs
+          cp frontend/index.html docs/
+          cp -r frontend/pkg docs/pkg
