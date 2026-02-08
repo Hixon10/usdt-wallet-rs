@@ -1,48 +1,565 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Rust WASM Demo</title>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>USDT (TRON) Wallet SDK UI</title>
+    <style>
+        :root {
+            --bg: #f6f7fb;
+            --card: #ffffff;
+            --text: #111827;
+            --muted: #6b7280;
+            --accent: #2563eb;
+            --accent2: #1d4ed8;
+            --border: #e5e7eb;
+            --field: #ffffff;
+            --fieldBorder: #d1d5db;
+            --bad: #b91c1c;
+            --good: #047857;
+            --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        }
+
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .wrap {
+            max-width: 1100px;
+            margin: 26px auto;
+            padding: 0 16px 48px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        h1 {
+            font-size: 18px;
+            margin: 0;
+        }
+
+        .pill {
+            font-size: 12px;
+            color: var(--muted);
+            border: 1px solid var(--border);
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #fff;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+        @media (min-width: 980px) {
+            .grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px;
+        }
+
+        .card h2 {
+            font-size: 13px;
+            margin: 0 0 10px;
+            color: #0f172a;
+            font-weight: 650;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin: 10px 0 6px;
+        }
+
+        input, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            background: var(--field);
+            color: var(--text);
+            border: 1px solid var(--fieldBorder);
+            border-radius: 10px;
+            padding: 10px 10px;
+            outline: none;
+        }
+
+        textarea {
+            min-height: 84px;
+            resize: vertical;
+        }
+
+        input:focus, textarea:focus {
+            border-color: #93c5fd;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            align-items: end;
+            flex-wrap: wrap;
+        }
+
+        .row > * {
+            flex: 1 1 220px;
+        }
+
+        button {
+            background: linear-gradient(180deg, var(--accent), var(--accent2));
+            border: 1px solid #1e40af;
+            color: white;
+            border-radius: 10px;
+            padding: 10px 12px;
+            cursor: pointer;
+            font-weight: 650;
+        }
+
+        button.secondary {
+            background: #fff;
+            border-color: var(--border);
+            color: var(--text);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .status {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 6px;
+        }
+
+        .status.good {
+            color: var(--good);
+        }
+
+        .status.bad {
+            color: var(--bad);
+        }
+
+        .small {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        code {
+            font-family: var(--mono);
+            font-size: 12px;
+        }
+
+        .outarea {
+            font-family: var(--mono);
+        }
+    </style>
 </head>
 <body>
-<h1>WASM Client</h1>
+<div class="wrap">
+    <div class="topbar">
+        <h1>USDT (TRON) Wallet SDK — WASM UI</h1>
+        <div class="pill">Independent forms • Shared API key only</div>
+    </div>
 
-<div style="margin-bottom: 10px;">
-    <label for="wallet-input">Wallet: </label>
-    <input type="text" id="wallet-input" value="browser_user_1">
-    <button id="send-btn">Send Request</button>
-</div>
+    <div class="card">
+        <h2>Status</h2>
+        <div id="initStatus" class="status">Loading WASM…</div>
+        <div class="small">
+            Each function form is independent (no auto-fill between forms).
+            The only shared input is <code>trongridApiKey</code>.
+        </div>
+    </div>
 
-<div id="content" style="border: 1px solid #ccc; padding: 10px;">
-    Result will appear here...
+    <div class="card">
+        <h2>Common (shared)</h2>
+        <label for="apiKeyCommon">trongridApiKey (optional)</label>
+        <input id="apiKeyCommon" placeholder="Optional (can be empty)" autocomplete="off"/>
+        <div class="small">Used by: get_trx_balance, get_usdt_balance, send_trx.</div>
+
+        <div class="row" style="margin-top:10px">
+            <div>
+                <button class="secondary" id="btnClearAll" type="button">Clear all fields</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>1) generate_new_mnemonic() → String</h2>
+            <button id="btnGenMnemonic" type="button" disabled>Generate 12-word mnemonic</button>
+
+            <label for="outMnemonic">Output</label>
+            <textarea id="outMnemonic" class="outarea" readonly placeholder="12 words will appear here"></textarea>
+            <div id="statusMnemonic" class="status"></div>
+        </div>
+
+        <div class="card">
+            <h2>2) mnemonic_to_tron_address(mnemonic, account) → String</h2>
+
+            <label for="inMnemonic2">mnemonic</label>
+            <textarea id="inMnemonic2" placeholder="Enter your 12-word mnemonic"></textarea>
+
+            <div class="row">
+                <div>
+                    <label for="inAccount2">account (int)</label>
+                    <input id="inAccount2" type="number" value="0" min="0" step="1"/>
+                </div>
+                <div>
+                    <label>&nbsp;</label>
+                    <button id="btnDeriveAddress" type="button" disabled>Get TRON address</button>
+                </div>
+            </div>
+
+            <label for="outAddress2">Output (base58)</label>
+            <input id="outAddress2" class="outarea" readonly placeholder="T..."/>
+            <div id="statusAddress2" class="status"></div>
+        </div>
+
+        <div class="card">
+            <h2>3) get_trx_balance(trongridApiKey, tron_address) → String</h2>
+
+            <label for="inAddress3">tron_address</label>
+            <input id="inAddress3" placeholder="T..." autocomplete="off"/>
+
+            <button id="btnGetTrx" type="button" disabled style="margin-top:10px">Get TRX balance</button>
+
+            <label for="outTrx3">Output</label>
+            <textarea id="outTrx3" class="outarea" readonly
+                      placeholder="Balance or error message will appear here"></textarea>
+            <div id="statusTrx3" class="status"></div>
+        </div>
+
+        <div class="card">
+            <h2>4) get_usdt_balance(trongridApiKey, tron_address) → String</h2>
+
+            <label for="inAddress4">tron_address</label>
+            <input id="inAddress4" placeholder="T..." autocomplete="off"/>
+
+            <button id="btnGetUsdt" type="button" disabled style="margin-top:10px">Get USDT balance</button>
+
+            <label for="outUsdt4">Output</label>
+            <textarea id="outUsdt4" class="outarea" readonly
+                      placeholder="Balance or error message will appear here"></textarea>
+            <div id="statusUsdt4" class="status"></div>
+        </div>
+
+        <div class="card">
+            <h2>5) send_trx(...) → transactionId OR error message</h2>
+
+            <label for="inMnemonic5">mnemonic</label>
+            <textarea id="inMnemonic5" placeholder="Mnemonic used to sign transaction"></textarea>
+
+            <div class="row">
+                <div>
+                    <label for="inAccount5">account</label>
+                    <input id="inAccount5" type="number" value="0" min="0" step="1"/>
+                </div>
+                <div></div>
+            </div>
+
+            <div class="row">
+                <div>
+                    <label for="inTo5">to_address</label>
+                    <input id="inTo5" placeholder="T..." autocomplete="off"/>
+                </div>
+                <div>
+                    <label for="inAmount5">amount (TRX)</label>
+                    <input id="inAmount5" placeholder="e.g. 1.25" autocomplete="off"/>
+                </div>
+            </div>
+
+            <button id="btnSendTrx" type="button" disabled style="margin-top:10px">Send TRX</button>
+
+            <label for="outSend5">Output (txid or error)</label>
+            <textarea id="outSend5" class="outarea" readonly
+                      placeholder="Transaction id or error message will appear here"></textarea>
+            <div id="statusSend5" class="status"></div>
+        </div>
+
+        <div class="card">
+            <h2>Log</h2>
+            <div class="small">Most recent at top.</div>
+            <div>
+                <button class="secondary" id="btnClearLog" style="margin-top: 10px;margin-bottom: 10px;" type="button">
+                    Clear log
+                </button>
+            </div>
+            <textarea id="logOut" class="outarea" readonly style="min-height:220px"></textarea>
+        </div>
+    </div>
 </div>
 
 <script type="module">
-    import init, { get_trx_balance } from './pkg/frontend.js';
+    import init, {
+        generate_new_mnemonic,
+        mnemonic_to_tron_address,
+        get_trx_balance,
+        get_usdt_balance,
+        send_trx
+    } from "./pkg/frontend.js";
 
-    async function run() {
-        await init();
+    const $ = (id) => document.getElementById(id);
 
-        const btn = document.getElementById('send-btn');
-        const input = document.getElementById('wallet-input');
-        const contentDiv = document.getElementById('content');
-
-        btn.addEventListener('click', async () => {
-            contentDiv.innerText = "Loading...";
-            const wallet = input.value; // Get value from input
-
-            try {
-                // Pass the userId string to Rust
-                const htmlContent = await get_trx_balance(wallet, "");
-                contentDiv.innerHTML = htmlContent;
-            } catch (error) {
-                contentDiv.innerText = error;
-                contentDiv.style.color = 'red';
-            }
-        });
+    function log(line) {
+        const el = $("logOut");
+        const ts = new Date().toISOString();
+        el.value = `[${ts}] ${line}\n` + el.value;
     }
 
-    run();
+    function setStatus(id, msg, kind) {
+        const el = $(id);
+        el.textContent = msg || "";
+        el.className = "status" + (kind ? (" " + kind) : "");
+    }
+
+    function normalizeMnemonic(m) {
+        return (m || "")
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, " ");
+    }
+
+    function setButtonsEnabled(enabled) {
+        $("btnGenMnemonic").disabled = !enabled;
+        $("btnDeriveAddress").disabled = !enabled;
+        $("btnGetTrx").disabled = !enabled;
+        $("btnGetUsdt").disabled = !enabled;
+        $("btnSendTrx").disabled = !enabled;
+    }
+
+    function getApiKeyCommon() {
+        return ($("apiKeyCommon").value || "").trim(); // optional; can be empty
+    }
+
+    function clearAllFields() {
+        $("apiKeyCommon").value = "";
+
+        $("outMnemonic").value = "";
+        setStatus("statusMnemonic", "");
+
+        $("inMnemonic2").value = "";
+        $("inAccount2").value = 0;
+        $("outAddress2").value = "";
+        setStatus("statusAddress2", "");
+
+        $("inAddress3").value = "";
+        $("outTrx3").value = "";
+        setStatus("statusTrx3", "");
+
+        $("inAddress4").value = "";
+        $("outUsdt4").value = "";
+        setStatus("statusUsdt4", "");
+
+        $("inMnemonic5").value = "";
+        $("inAccount5").value = 0;
+        $("inTo5").value = "";
+        $("inAmount5").value = "";
+        $("outSend5").value = "";
+        setStatus("statusSend5", "");
+
+        log("Cleared all fields");
+    }
+
+    function clearLog() {
+        $("logOut").value = "";
+    }
+
+    async function run(opName, fn) {
+        try {
+            log(`${opName}...`);
+            const res = await fn();
+            log(`${opName}: OK`);
+            return {ok: true, res};
+        } catch (e) {
+            const msg = (e && e.message) ? e.message : String(e);
+            log(`${opName}: ERROR: ${msg}`);
+            return {ok: false, err: msg};
+        }
+    }
+
+    // initial state
+    setButtonsEnabled(false);
+
+    // auto init
+    (async () => {
+        const r = await run("WASM init()", async () => {
+            await init();
+            return "ready";
+        });
+        if (!r.ok) {
+            setStatus("initStatus", `WASM init failed: ${r.err}`, "bad");
+            return;
+        }
+        setStatus("initStatus", "WASM ready.", "good");
+        setButtonsEnabled(true);
+
+        clearAllFields();
+        clearLog();
+    })();
+
+    $("btnClearAll").addEventListener("click", clearAllFields);
+
+    $("btnClearLog").addEventListener("click", clearLog);
+
+    // 1) generate_new_mnemonic
+    $("btnGenMnemonic").addEventListener("click", async () => {
+        setStatus("statusMnemonic", "");
+        $("outMnemonic").value = "";
+
+        const r = await run("generate_new_mnemonic()", async () => {
+            return normalizeMnemonic(await generate_new_mnemonic());
+        });
+
+        if (!r.ok) {
+            setStatus("statusMnemonic", r.err, "bad");
+            return;
+        }
+
+        $("outMnemonic").value = r.res;
+        setStatus("statusMnemonic", "OK", "good");
+    });
+
+    // 2) mnemonic_to_tron_address
+    $("btnDeriveAddress").addEventListener("click", async () => {
+        setStatus("statusAddress2", "");
+        $("outAddress2").value = "";
+
+        const mnemonic = normalizeMnemonic($("inMnemonic2").value);
+        const account = parseInt($("inAccount2").value, 10);
+
+        if (!mnemonic) {
+            setStatus("statusAddress2", "mnemonic is empty.", "bad");
+            return;
+        }
+        if (!Number.isFinite(account) || account < 0) {
+            setStatus("statusAddress2", "account must be a non-negative integer.", "bad");
+            return;
+        }
+
+        const r = await run("mnemonic_to_tron_address()", async () => {
+            return await mnemonic_to_tron_address(mnemonic, account);
+        });
+
+        if (!r.ok) {
+            setStatus("statusAddress2", r.err, "bad");
+            return;
+        }
+
+        $("outAddress2").value = r.res;
+        setStatus("statusAddress2", "OK", "good");
+    });
+
+    // 3) get_trx_balance
+    $("btnGetTrx").addEventListener("click", async () => {
+        setStatus("statusTrx3", "");
+        $("outTrx3").value = "";
+
+        const address = ($("inAddress3").value || "").trim();
+        if (!address) {
+            setStatus("statusTrx3", "tron_address is empty.", "bad");
+            return;
+        }
+
+        const r = await run("get_trx_balance()", async () => {
+            return await get_trx_balance(address, getApiKeyCommon());
+        });
+
+        if (!r.ok) {
+            $("outTrx3").value = r.err;
+            setStatus("statusTrx3", r.err, "bad");
+            return;
+        }
+
+        $("outTrx3").value = r.res;
+        setStatus("statusTrx3", "OK", "good");
+    });
+
+    // 4) get_usdt_balance
+    $("btnGetUsdt").addEventListener("click", async () => {
+        setStatus("statusUsdt4", "");
+        $("outUsdt4").value = "";
+
+        const address = ($("inAddress4").value || "").trim();
+        if (!address) {
+            setStatus("statusUsdt4", "tron_address is empty.", "bad");
+            return;
+        }
+
+        const r = await run("get_usdt_balance()", async () => {
+            return await get_usdt_balance(address, getApiKeyCommon());
+        });
+
+        if (!r.ok) {
+            $("outUsdt4").value = r.err;
+            setStatus("statusUsdt4", r.err, "bad");
+            return;
+        }
+
+        $("outUsdt4").value = r.res;
+        setStatus("statusUsdt4", "OK", "good");
+    });
+
+    // 5) send_trx
+    $("btnSendTrx").addEventListener("click", async () => {
+        setStatus("statusSend5", "");
+        $("outSend5").value = "";
+
+        const mnemonic = normalizeMnemonic($("inMnemonic5").value);
+        const account = parseInt($("inAccount5").value, 10);
+        const to = ($("inTo5").value || "").trim();
+        const amount = parseFloat($("inAmount5").value);
+
+        if (!mnemonic) {
+            setStatus("statusSend5", "mnemonic is empty.", "bad");
+            return;
+        }
+        if (!Number.isFinite(account) || account < 0) {
+            setStatus("statusSend5", "account must be a non-negative integer.", "bad");
+            return;
+        }
+        if (!to) {
+            setStatus("statusSend5", "to_address is empty.", "bad");
+            return;
+        }
+        if (!amount) {
+            setStatus("statusSend5", "amount is empty.", "bad");
+            return;
+        }
+        if (!Number.isFinite(amount) || amount < 0) {
+            setStatus("statusSend5", "amount must be a non-negative float.", "bad");
+            return;
+        }
+
+        const r = await run("send_trx()", async () => {
+            return await send_trx(mnemonic, account, to, amount, getApiKeyCommon());
+        });
+
+        if (!r.ok) {
+            $("outSend5").value = r.err;
+            setStatus("statusSend5", r.err, "bad");
+            return;
+        }
+
+        $("outSend5").value = r.res;
+        setStatus("statusSend5", "OK (txid or error string returned)", "good");
+    });
 </script>
 </body>
 </html>

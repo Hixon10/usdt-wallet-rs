@@ -28,11 +28,16 @@ async fn main() {
         });
 
     let passphrase = ""; // Leave empty unless you specifically set one
+    let account = 0;
     let address_index = 0;
     // --------------------------------
 
-    let (tron_wallet, _) =
-        mnemonic_to_tron_address_and_private_key(mnemonic.as_str(), passphrase, address_index);
+    let (tron_wallet, _) = mnemonic_to_tron_address_and_private_key(
+        mnemonic.as_str(),
+        passphrase,
+        account,
+        address_index,
+    );
 
     // 2. Generate a NEW Mnemonic (12 words)
     println!("--------------------------------------------------");
@@ -42,8 +47,12 @@ async fn main() {
     println!("Generated Mnemonic: {new_mnemonic}");
 
     let address_index = 0;
-    let _ =
-        mnemonic_to_tron_address_and_private_key(new_mnemonic.as_str(), passphrase, address_index);
+    let _ = mnemonic_to_tron_address_and_private_key(
+        new_mnemonic.as_str(),
+        passphrase,
+        account,
+        address_index,
+    );
 
     // get balances
     let client = TrongridClient::new(

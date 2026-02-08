@@ -494,6 +494,7 @@ mod tests {
             "because power elegant ranch excuse plug six wasp sunny radar car topple",
             "",
             0,
+            0,
         );
 
         let raw_data_hex = "0a1b2c3d4e5f00112233445566778899aabbccddeeff0123456789abcdef";
@@ -517,6 +518,7 @@ mod tests {
         let (sender_base58, secret_key) = tron_wallet::mnemonic_to_tron_address_and_private_key(
             "because power elegant ranch excuse plug six wasp sunny radar car topple",
             "",
+            0,
             0,
         );
         let sender_hex41 = TrongridClient::tron_base58_to_hex41(sender_base58.as_str()).unwrap();
@@ -659,7 +661,7 @@ mod tests {
             when.method(GET).path("/v1/accounts/T123");
             then.status(200)
                 .header("content-type", "application/json")
-                .delay(std::time::Duration::from_millis(2000))
+                .delay(Duration::from_millis(2000))
                 .body(r#"{"data":[{"balance":1}]}"#);
         });
 
