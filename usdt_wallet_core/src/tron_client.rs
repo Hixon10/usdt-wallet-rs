@@ -502,10 +502,11 @@ impl TrongridClient {
             return Err(TronError::Http(broadcast_resp.status().as_u16()));
         }
 
-        let br: BroadcastTransactionResponse = broadcast_resp
-            .json()
-            .await
-            .map_err(|err| TronError::Json(err.to_string()))?;
+        let br: BroadcastTransactionResponse = broadcast_resp.json().await.map_err(|err| {
+            TronError::Json(format!(
+                "cannot deserialize BroadcastTransactionResponse: {err}"
+            ))
+        })?;
 
         if !br.result {
             return Err(TronError::BroadcastFailed(format!(
