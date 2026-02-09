@@ -44,7 +44,7 @@ cargo run -p cli -- convert-mnemonic-to-wallet "flip depart foam toward horn sna
 
 ### 4. Check Balances
 
-Get TRX Balance.
+**Get TRX Balance:**
 
 ```bash
 cargo run -p cli -- get-trx-balance TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
