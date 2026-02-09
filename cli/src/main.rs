@@ -164,7 +164,7 @@ async fn run(cli: Cli) -> Result<(), String> {
             let trx_balance = client
                 .get_trx_balance(&tron_wallet)
                 .await
-                .map_err(|e| format!("get-trx-balance failed for {tron_wallet}: {e}"))?;
+                .map_err(|e| format!("get-trx-balance failed for {tron_wallet}: {e:?}"))?;
 
             #[allow(clippy::cast_precision_loss)]
             let trx: f64 = trx_balance as f64 / 1_000_000.0;
@@ -181,7 +181,7 @@ async fn run(cli: Cli) -> Result<(), String> {
             let usdt_balance = client
                 .get_usdt_balance(&tron_wallet)
                 .await
-                .map_err(|e| format!("get-usdt-balance failed for {tron_wallet}: {e}"))?;
+                .map_err(|e| format!("get-usdt-balance failed for {tron_wallet}: {e:?}"))?;
 
             #[allow(clippy::cast_precision_loss)]
             let usdt: f64 = usdt_balance as f64 / 1_000_000.0;
@@ -219,7 +219,7 @@ async fn run(cli: Cli) -> Result<(), String> {
                     dry_run,
                 )
                 .await
-                .map_err(|e| format!("send-trx failed: {e}"))?;
+                .map_err(|e| format!("send-trx failed: {e:?}"))?;
 
             println!("{send_trx_response}");
             Ok(())
@@ -255,7 +255,7 @@ async fn run(cli: Cli) -> Result<(), String> {
                     dry_run,
                 )
                 .await
-                .map_err(|e| format!("send-usdt failed: {e}"))?;
+                .map_err(|e| format!("send-usdt failed: {e:?}"))?;
 
             println!("{send_usdt_response}");
             Ok(())
