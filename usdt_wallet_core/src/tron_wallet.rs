@@ -123,11 +123,8 @@ pub fn mnemonic_to_tron_address_and_private_key(
     account: u32,
     address_index: u32,
 ) -> (String, SecretKey) {
-    println!(" recovering TRC20 wallet...");
-
     // 1. BIP39: Mnemonic -> Seed
     let seed = mnemonic_to_seed(mnemonic, passphrase);
-    println!("Seed calculated.");
 
     // 2. BIP32: Master Key Generation
     let (master_secret, chain_code) = master_key_from_seed(&seed);
@@ -153,7 +150,7 @@ pub fn mnemonic_to_tron_address_and_private_key(
     }
 
     // 4. Output Results
-    let private_key_hex = hex::encode(current_sk.to_bytes());
+    let _private_key_hex = hex::encode(current_sk.to_bytes());
     let tron_wallet_address: String = private_key_to_tron_address(&current_sk);
 
     // Get the Public Key object
@@ -161,22 +158,19 @@ pub fn mnemonic_to_tron_address_and_private_key(
     // 2. Get Uncompressed Hex (Standard for Tron/Eth)
     // 'false' means uncompressed
     let uncompressed_point = public_key.to_encoded_point(false);
-    let pub_key_hex = hex::encode(uncompressed_point.as_bytes());
+    let _pub_key_hex = hex::encode(uncompressed_point.as_bytes());
 
     // 3. Prepare Compressed Key (For display/comparison with your expected value)
     // 'true' asks for the compressed format (33 bytes, starts with 02 or 03)
     let compressed_point = public_key.to_encoded_point(true);
-    let compressed_public_hex = hex::encode(compressed_point.as_bytes());
+    let _compressed_public_hex = hex::encode(compressed_point.as_bytes());
 
-    println!("--------------------------------------------------");
-    println!("TRON (TRC20) Wallet Recovered");
-    println!("--------------------------------------------------");
-    println!("Private Key: {private_key_hex}");
-    println!("Public Key: {pub_key_hex}");
-    println!("Public Key (Compressed): {compressed_public_hex}");
-    println!("Tron Address:     {tron_wallet_address}");
-    println!("--------------------------------------------------");
-    println!("Import this Private Key into TronLink or TrustWallet to access USDT.");
+    // println!("TRON (TRC20) Wallet Recovered");
+    // println!("Private Key: {_private_key_hex}");
+    // println!("Public Key: {_pub_key_hex}");
+    // println!("Public Key (Compressed): {_compressed_public_hex}");
+    // println!("Tron Address:     {tron_wallet_address}");
+    // println!("Import this Private Key into TronLink or TrustWallet to access USDT.");
 
     (tron_wallet_address, current_sk)
 }

@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 usdt_wallet_core = { path = "../usdt_wallet_core" }
 tokio = { version = "1", features = ["macros", "rt"] }
+clap = { version = "4.5.57", features = ["derive"] }

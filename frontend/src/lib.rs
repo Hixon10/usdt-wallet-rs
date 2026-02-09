@@ -68,6 +68,7 @@ pub async fn send_trx(
             from_wallet.as_str(),
             to_wallet.as_str(),
             amount_sun,
+            false,
         )
         .await
         .map_err(|err| format!("Error sending trx: {err:?}"))?;
@@ -96,6 +97,7 @@ pub async fn send_usdt(
             from_wallet.as_str(),
             to_wallet.as_str(),
             amount_sun as u128,
+            false,
         )
         .await
         .map_err(|err| format!("Error sending usdt: {err:?}"))?;

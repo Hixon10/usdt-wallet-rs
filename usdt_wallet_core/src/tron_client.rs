@@ -296,6 +296,7 @@ impl TrongridClient {
         from_base58: &str,
         to_base58: &str,
         amount_sun: i64,
+        dry_run: bool,
     ) -> Result<String, TronError> {
         if amount_sun <= 0 {
             return Err(TronError::InvalidArgument(
@@ -339,6 +340,10 @@ impl TrongridClient {
             wallet_secret_key,
             &unsigned.raw_data_hex,
         )?;
+
+        if dry_run {
+            return Ok("send_trx dry run".to_string());
+        }
 
         // 3) Broadcast signed transaction
         let broadcast_body = BroadcastTransactionRequest {
@@ -395,6 +400,7 @@ impl TrongridClient {
         from_base58: &str,
         to_base58: &str,
         amount_base_units: u128,
+        dry_run: bool,
     ) -> Result<String, TronError> {
         const USDT_CONTRACT_BASE58: &str = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
@@ -467,6 +473,10 @@ impl TrongridClient {
             wallet_secret_key,
             &unsigned.raw_data_hex,
         )?;
+
+        if dry_run {
+            return Ok("send_usdt dry run".to_string());
+        }
 
         // 4) Broadcast signed transaction
         let broadcast_body = BroadcastTransactionRequest {
@@ -747,7 +757,13 @@ mod tests {
         let client = TrongridClient::new(server.base_url(), None, Duration::from_secs(2)).unwrap();
 
         let send_trx_result = client
-            .send_trx(&secret_key, sender_base58.as_str(), receiver_base58, amount)
+            .send_trx(
+                &secret_key,
+                sender_base58.as_str(),
+                receiver_base58,
+                amount,
+                false,
+            )
             .await;
         assert!(
             send_trx_result.is_ok(),
@@ -837,6 +853,7 @@ mod tests {
                 sender_base58.as_str(),
                 receiver_base58.as_str(),
                 amount,
+                false,
             )
             .await;
         assert!(
