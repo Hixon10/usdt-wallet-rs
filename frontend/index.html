@@ -193,7 +193,8 @@
         <h2>Common (shared)</h2>
         <label for="apiKeyCommon">trongridApiKey (optional)</label>
         <input id="apiKeyCommon" placeholder="Optional (can be empty)" autocomplete="off"/>
-        <div class="small" style="margin-top:10px">Used by: get_trx_balance, get_usdt_balance, send_trx.</div>
+        <div class="small" style="margin-top:10px">Used by: get_trx_balance, get_usdt_balance, send_trx, send_usdt.
+        </div>
 
         <div class="row" style="margin-top:10px">
             <div>
@@ -296,6 +297,39 @@
         </div>
 
         <div class="card">
+            <h2>6) send_usdt(...) → transactionId OR error message</h2>
+
+            <label for="inMnemonic6">mnemonic</label>
+            <textarea id="inMnemonic6" placeholder="Mnemonic used to sign transaction"></textarea>
+
+            <div class="row">
+                <div>
+                    <label for="inAccount6">account</label>
+                    <input id="inAccount6" type="number" value="0" min="0" step="1"/>
+                </div>
+                <div></div>
+            </div>
+
+            <div class="row">
+                <div>
+                    <label for="inTo6">to_address</label>
+                    <input id="inTo6" placeholder="T..." autocomplete="off"/>
+                </div>
+                <div>
+                    <label for="inAmount6">amount (USDT)</label>
+                    <input id="inAmount6" placeholder="e.g. 1.25" autocomplete="off"/>
+                </div>
+            </div>
+
+            <button id="btnSendUsdt" type="button" disabled style="margin-top:10px">Send USDT</button>
+
+            <label for="outSend6">Output (txid or error)</label>
+            <textarea id="outSend6" class="outarea" readonly
+                      placeholder="Transaction id or error message will appear here"></textarea>
+            <div id="statusSend6" class="status"></div>
+        </div>
+
+        <div class="card">
             <h2>Log</h2>
             <div class="small">Most recent at top.</div>
             <div>
@@ -314,7 +348,8 @@
         mnemonic_to_tron_address,
         get_trx_balance,
         get_usdt_balance,
-        send_trx
+        send_trx,
+        send_usdt
     } from "./pkg/frontend.js";
 
     const $ = (id) => document.getElementById(id);
@@ -344,6 +379,7 @@
         $("btnGetTrx").disabled = !enabled;
         $("btnGetUsdt").disabled = !enabled;
         $("btnSendTrx").disabled = !enabled;
+        $("btnSendUsdt").disabled = !enabled;
     }
 
     function getApiKeyCommon() {
@@ -375,6 +411,13 @@
         $("inAmount5").value = "";
         $("outSend5").value = "";
         setStatus("statusSend5", "");
+
+        $("inMnemonic6").value = "";
+        $("inAccount6").value = 0;
+        $("inTo6").value = "";
+        $("inAmount6").value = "";
+        $("outSend6").value = "";
+        setStatus("statusSend6", "");
 
         log("Cleared all fields");
     }
@@ -561,6 +604,51 @@
 
         $("outSend5").value = r.res;
         setStatus("statusSend5", "OK (txid or error string returned)", "good");
+    });
+
+    // 6) send_usdt
+    $("btnSendUsdt").addEventListener("click", async () => {
+        setStatus("statusSend6", "");
+        $("outSend6").value = "";
+
+        const mnemonic = normalizeMnemonic($("inMnemonic6").value);
+        const account = parseInt($("inAccount6").value, 10);
+        const to = ($("inTo6").value || "").trim();
+        const amount = parseFloat($("inAmount6").value);
+
+        if (!mnemonic) {
+            setStatus("statusSend6", "mnemonic is empty.", "bad");
+            return;
+        }
+        if (!Number.isFinite(account) || account < 0) {
+            setStatus("statusSend6", "account must be a non-negative integer.", "bad");
+            return;
+        }
+        if (!to) {
+            setStatus("statusSend6", "to_address is empty.", "bad");
+            return;
+        }
+        if (!amount) {
+            setStatus("statusSend6", "amount is empty.", "bad");
+            return;
+        }
+        if (!Number.isFinite(amount) || amount < 0) {
+            setStatus("statusSend6", "amount must be a non-negative float.", "bad");
+            return;
+        }
+
+        const r = await run("send_usdt()", async () => {
+            return await send_usdt(mnemonic, account, to, amount, getApiKeyCommon());
+        });
+
+        if (!r.ok) {
+            $("outSend6").value = r.err;
+            setStatus("statusSend6", r.err, "bad");
+            return;
+        }
+
+        $("outSend6").value = r.res;
+        setStatus("statusSend6", "OK (txid or error string returned)", "good");
     });
 </script>
 </body>

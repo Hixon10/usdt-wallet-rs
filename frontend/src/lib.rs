@@ -75,6 +75,34 @@ pub async fn send_trx(
     Ok(send_trx_response)
 }
 
+#[wasm_bindgen]
+pub async fn send_usdt(
+    mnemonic: String,
+    account: u32,
+    to_wallet: String,
+    amount: f64,
+    trongrid_api_key: String,
+) -> Result<String, String> {
+    let amount_sun = usdt_to_sun_units(amount)?;
+
+    let client = build_client(trongrid_api_key)?;
+
+    let (from_wallet, from_secret_key) =
+        mnemonic_to_tron_address_and_private_key(mnemonic.as_str(), "", account, 0);
+
+    let send_trx_response = client
+        .send_usdt(
+            &from_secret_key,
+            from_wallet.as_str(),
+            to_wallet.as_str(),
+            amount_sun as u128,
+        )
+        .await
+        .map_err(|err| format!("Error sending usdt: {err:?}"))?;
+
+    Ok(send_trx_response)
+}
+
 fn build_client(trongrid_api_key: String) -> Result<TrongridClient, String> {
     let api_key_opt: Option<String> = {
         let s = trongrid_api_key.trim();
