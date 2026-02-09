@@ -49,6 +49,9 @@ jobs:
       - name: Build (release)
         run: cargo build --workspace --release --verbose
 
+      - name: Run the generate-mnemonic command as an integration test
+        run: cargo run -p cli -- generate-mnemonic
+
       - name: Build frontend WASM
         run: cargo build -p frontend --target wasm32-unknown-unknown --release
 
